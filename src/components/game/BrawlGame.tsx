@@ -151,7 +151,7 @@ export function BrawlGame() {
         </div>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-52 px-6">
+      <div className="pointer-events-none absolute inset-x-0 bottom-56 px-6">
         <div className="mx-auto max-w-sm space-y-2">
           <div className="h-3 overflow-hidden rounded-full border border-border bg-card/80">
             <div

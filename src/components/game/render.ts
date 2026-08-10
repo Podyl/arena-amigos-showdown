@@ -15,9 +15,11 @@ function color(token: string) {
 }
 
 export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: number) {
-  const scale = Math.max(w / ARENA_W, h / ARENA_H) * 0.62;
-  const camX = g.hero.pos.x;
-  const camY = g.hero.pos.y;
+  const scale = Math.max(w / 620, h / 1000);
+  const halfW = w / 2 / scale;
+  const halfH = h / 2 / scale;
+  const camX = Math.min(Math.max(g.hero.pos.x, halfW), Math.max(halfW, ARENA_W - halfW));
+  const camY = Math.min(Math.max(g.hero.pos.y, halfH), Math.max(halfH, ARENA_H - halfH));
 
   ctx.save();
   ctx.clearRect(0, 0, w, h);
