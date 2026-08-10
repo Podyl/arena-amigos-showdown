@@ -1,3 +1,6 @@
+import { getBrawler, type Brawler } from "./characters";
+import { sfx } from "./audio";
+
 export type Vec = { x: number; y: number };
 
 export const ARENA_W = 1000;
@@ -17,6 +20,8 @@ export const WALLS: Wall[] = [
   { x: 300, y: 660, w: 400, h: 60 },
 ];
 
+export type EnemyKind = "grunt" | "runner" | "shooter" | "brute" | "boss";
+
 export type Entity = {
   id: number;
   pos: Vec;
@@ -26,8 +31,11 @@ export type Entity = {
   aim: number;
   cooldown: number;
   kind: "hero" | "enemy";
+  enemyKind: EnemyKind;
   hitFlash: number;
   speed: number;
+  color: string;
+  ringTimer: number;
 };
 
 export type Bullet = {
@@ -38,26 +46,48 @@ export type Bullet = {
   life: number;
   damage: number;
   radius: number;
+  pierce: number;
+  hits: number[];
+  color: string;
 };
 
-export type Particle = { pos: Vec; vel: Vec; life: number; max: number; hue: string; size: number };
+export type Particle = {
+  pos: Vec;
+  vel: Vec;
+  life: number;
+  max: number;
+  hue: string;
+  size: number;
+};
 
-export type Pickup = { id: number; pos: Vec; bob: number };
+export type PowerKind = "heal" | "damage" | "speed" | "shield" | "rapid";
+
+export type Pickup = { id: number; pos: Vec; bob: number; kind: PowerKind };
+
+export type FloatText = { pos: Vec; text: string; life: number; color: string };
+
+export type Buffs = { damage: number; speed: number; rapid: number; shield: number };
 
 export type GameState = {
+  brawler: Brawler;
   hero: Entity;
   enemies: Entity[];
   bullets: Bullet[];
   particles: Particle[];
   pickups: Pickup[];
+  texts: FloatText[];
+  buffs: Buffs;
   score: number;
   wave: number;
   waveTimer: number;
-  spawnQueue: number;
+  spawnQueue: EnemyKind[];
   spawnTimer: number;
   super: number;
   over: boolean;
   time: number;
+  shake: number;
+  bossActive: boolean;
+  banner: { text: string; life: number } | null;
 };
 
 let idc = 1;
@@ -82,55 +112,80 @@ function moveWithCollision(e: Entity, dx: number, dy: number) {
   if (!circleHitsWall({ x: e.pos.x, y: ny }, e.radius)) e.pos.y = ny;
 }
 
-export function createGame(): GameState {
+export function createGame(brawlerId: string): GameState {
+  const b = getBrawler(brawlerId);
   return {
+    brawler: b,
     hero: {
       id: nid(),
       pos: { x: ARENA_W / 2, y: ARENA_H - 220 },
-      hp: 100,
-      maxHp: 100,
-      radius: 26,
+      hp: b.hp,
+      maxHp: b.hp,
+      radius: b.radius,
       aim: -Math.PI / 2,
       cooldown: 0,
       kind: "hero",
+      enemyKind: "grunt",
       hitFlash: 0,
-      speed: 260,
+      speed: b.speed,
+      color: b.color,
+      ringTimer: 0,
     },
     enemies: [],
     bullets: [],
     particles: [],
     pickups: [],
+    texts: [],
+    buffs: { damage: 0, speed: 0, rapid: 0, shield: 0 },
     score: 0,
     wave: 0,
     waveTimer: 0.8,
-    spawnQueue: 0,
+    spawnQueue: [],
     spawnTimer: 0,
     super: 0,
     over: false,
     time: 0,
+    shake: 0,
+    bossActive: false,
+    banner: null,
   };
 }
 
-function spawnEnemy(g: GameState) {
-  const tough = 1 + g.wave * 0.25;
-  let pos: Vec = { x: 0, y: 0 };
-  for (let i = 0; i < 60; i++) {
-    pos = { x: 60 + Math.random() * (ARENA_W - 120), y: 60 + Math.random() * (ARENA_H * 0.6) };
-    if (!circleHitsWall(pos, 30) && dist(pos, g.hero.pos) > 420) break;
+const ENEMY_STATS: Record<EnemyKind, { hp: number; speed: number; radius: number; color: string }> = {
+  grunt: { hp: 50, speed: 95, radius: 24, color: "oklch(0.62 0.21 25)" },
+  runner: { hp: 32, speed: 190, radius: 20, color: "oklch(0.72 0.19 60)" },
+  shooter: { hp: 44, speed: 80, radius: 23, color: "oklch(0.65 0.2 320)" },
+  brute: { hp: 150, speed: 65, radius: 36, color: "oklch(0.5 0.14 285)" },
+  boss: { hp: 900, speed: 78, radius: 62, color: "oklch(0.55 0.22 10)" },
+};
+
+function spawnEnemy(g: GameState, kind: EnemyKind) {
+  const s = ENEMY_STATS[kind];
+  const tough = 1 + g.wave * 0.22;
+  let pos: Vec = { x: ARENA_W / 2, y: 120 };
+  for (let i = 0; i < 80; i++) {
+    const p = { x: 70 + Math.random() * (ARENA_W - 140), y: 70 + Math.random() * (ARENA_H * 0.6) };
+    if (!circleHitsWall(p, s.radius + 6) && dist(p, g.hero.pos) > 420) {
+      pos = p;
+      break;
+    }
   }
   g.enemies.push({
     id: nid(),
     pos,
-    hp: 50 * tough,
-    maxHp: 50 * tough,
-    radius: 24,
-    aim: 0,
+    hp: s.hp * tough,
+    maxHp: s.hp * tough,
+    radius: s.radius,
+    aim: Math.PI / 2,
     cooldown: Math.random(),
     kind: "enemy",
+    enemyKind: kind,
     hitFlash: 0,
-    speed: 90 + Math.min(60, g.wave * 8),
+    speed: s.speed + Math.min(50, g.wave * 5),
+    color: s.color,
+    ringTimer: 3,
   });
-  burst(g, pos, "var(--enemy)", 12);
+  burst(g, pos, s.color, kind === "boss" ? 60 : 12, kind === "boss" ? 420 : 220);
 }
 
 export function burst(g: GameState, pos: Vec, hue: string, n: number, power = 220) {
@@ -148,56 +203,170 @@ export function burst(g: GameState, pos: Vec, hue: string, n: number, power = 22
   }
 }
 
-function fire(g: GameState, e: Entity, spreadCount: number, dmg: number, speed: number) {
-  for (let i = 0; i < spreadCount; i++) {
-    const off = (i - (spreadCount - 1) / 2) * 0.14;
-    const a = e.aim + off;
-    g.bullets.push({
-      id: nid(),
-      pos: { x: e.pos.x + Math.cos(a) * (e.radius + 6), y: e.pos.y + Math.sin(a) * (e.radius + 6) },
-      vel: { x: Math.cos(a) * speed, y: Math.sin(a) * speed },
-      owner: e.kind,
-      life: 1.1,
-      damage: dmg,
-      radius: 7,
+function addBullet(
+  g: GameState,
+  e: Entity,
+  a: number,
+  opts: { dmg: number; speed: number; radius: number; life: number; color: string; pierce?: number },
+) {
+  g.bullets.push({
+    id: nid(),
+    pos: { x: e.pos.x + Math.cos(a) * (e.radius + 6), y: e.pos.y + Math.sin(a) * (e.radius + 6) },
+    vel: { x: Math.cos(a) * opts.speed, y: Math.sin(a) * opts.speed },
+    owner: e.kind,
+    life: opts.life,
+    damage: opts.dmg,
+    radius: opts.radius,
+    pierce: opts.pierce ?? 0,
+    hits: [],
+    color: opts.color,
+  });
+}
+
+export type Input = { move: Vec; aim: Vec; shooting: boolean; superPressed: boolean };
+
+function heroFire(g: GameState) {
+  const b = g.brawler;
+  const h = g.hero;
+  const mult = g.buffs.damage > 0 ? 1.8 : 1;
+  for (let i = 0; i < b.shots; i++) {
+    const off = (i - (b.shots - 1) / 2) * b.spread;
+    addBullet(g, h, h.aim + off, {
+      dmg: b.damage * mult,
+      speed: b.bulletSpeed,
+      radius: b.bulletRadius,
+      life: b.bulletLife,
+      color: b.accent,
     });
+  }
+  burst(g, { x: h.pos.x + Math.cos(h.aim) * 34, y: h.pos.y + Math.sin(h.aim) * 34 }, b.accent, 4, 120);
+  if (b.id === "nova") sfx.snipe();
+  else sfx.shoot();
+}
+
+function heroSuper(g: GameState) {
+  const b = g.brawler;
+  const h = g.hero;
+  sfx.superShot();
+  g.shake = Math.max(g.shake, 14);
+  burst(g, h.pos, b.accent, 46, 400);
+  if (b.superKind === "nova") {
+    for (let i = 0; i < 18; i++)
+      addBullet(g, h, (i / 18) * Math.PI * 2, {
+        dmg: 34,
+        speed: 620,
+        radius: 11,
+        life: 1.3,
+        color: b.accent,
+      });
+  } else if (b.superKind === "beam") {
+    for (let i = 0; i < 5; i++)
+      addBullet(g, h, h.aim, {
+        dmg: 60,
+        speed: 1200 + i * 40,
+        radius: 14,
+        life: 1.6,
+        color: b.accent,
+        pierce: 6,
+      });
+  } else if (b.superKind === "shock") {
+    for (let i = 0; i < 26; i++)
+      addBullet(g, h, (i / 26) * Math.PI * 2 + 0.1, {
+        dmg: 26,
+        speed: 420,
+        radius: 16,
+        life: 0.75,
+        color: b.accent,
+      });
+    for (const e of g.enemies) {
+      const d = dist(e.pos, h.pos);
+      if (d < 260 && d > 0) {
+        const a = Math.atan2(e.pos.y - h.pos.y, e.pos.x - h.pos.x);
+        moveWithCollision(e, Math.cos(a) * 90, Math.sin(a) * 90);
+      }
+    }
+  } else {
+    for (let i = 0; i < 24; i++) {
+      const a = h.aim + (Math.random() - 0.5) * 1.5;
+      addBullet(g, h, a, {
+        dmg: 16,
+        speed: 700 + Math.random() * 400,
+        radius: 7,
+        life: 1.2,
+        color: b.accent,
+      });
+    }
   }
 }
 
-export type Input = {
-  move: Vec;
-  aim: Vec;
-  shooting: boolean;
-  superPressed: boolean;
+const POWER_LABEL: Record<PowerKind, string> = {
+  heal: "+40 HP",
+  damage: "DUBBEL SKADA",
+  speed: "FART",
+  shield: "SKÖLD",
+  rapid: "SNABBELD",
 };
+
+function planWave(g: GameState): EnemyKind[] {
+  const w = g.wave;
+  if (w % 5 === 0) {
+    const q: EnemyKind[] = ["boss"];
+    for (let i = 0; i < Math.min(6, 2 + Math.floor(w / 5)); i++) q.push(i % 2 ? "runner" : "grunt");
+    return q;
+  }
+  const q: EnemyKind[] = [];
+  const total = 3 + Math.floor(w * 1.3);
+  for (let i = 0; i < total; i++) {
+    const r = Math.random();
+    if (w >= 4 && r < 0.15) q.push("brute");
+    else if (w >= 2 && r < 0.45) q.push("shooter");
+    else if (r < 0.7) q.push("runner");
+    else q.push("grunt");
+  }
+  return q;
+}
 
 export function step(g: GameState, input: Input, dt: number) {
   g.time += dt;
+  g.shake = Math.max(0, g.shake - dt * 40);
+  if (g.banner) {
+    g.banner.life -= dt;
+    if (g.banner.life <= 0) g.banner = null;
+  }
   if (g.over) {
     stepParticles(g, dt);
     return;
   }
 
-  // waves
-  if (g.enemies.length === 0 && g.spawnQueue === 0) {
+  if (g.enemies.length === 0 && g.spawnQueue.length === 0) {
     g.waveTimer -= dt;
     if (g.waveTimer <= 0) {
       g.wave += 1;
-      g.spawnQueue = 2 + Math.floor(g.wave * 1.4);
+      g.spawnQueue = planWave(g);
       g.waveTimer = 4;
+      const boss = g.wave % 5 === 0;
+      g.bossActive = boss;
+      g.banner = { text: boss ? `BOSS – VÅG ${g.wave}` : `VÅG ${g.wave}`, life: 2 };
+      if (boss) sfx.boss();
+      else sfx.wave();
     }
   }
-  if (g.spawnQueue > 0) {
+  if (g.spawnQueue.length > 0) {
     g.spawnTimer -= dt;
     if (g.spawnTimer <= 0) {
-      spawnEnemy(g);
-      g.spawnQueue -= 1;
-      g.spawnTimer = 0.45;
+      spawnEnemy(g, g.spawnQueue.shift()!);
+      g.spawnTimer = 0.4;
     }
   }
 
   const h = g.hero;
-  moveWithCollision(h, input.move.x * h.speed * dt, input.move.y * h.speed * dt);
+  const b = g.brawler;
+
+  for (const k of ["damage", "speed", "rapid", "shield"] as const)
+    g.buffs[k] = Math.max(0, g.buffs[k] - dt);
+
+  const speed = h.speed * (g.buffs.speed > 0 ? 1.45 : 1);
+  moveWithCollision(h, input.move.x * speed * dt, input.move.y * speed * dt);
 
   if (input.aim.x || input.aim.y) h.aim = Math.atan2(input.aim.y, input.aim.x);
   else if (input.move.x || input.move.y) h.aim = Math.atan2(input.move.y, input.move.x);
@@ -207,121 +376,197 @@ export function step(g: GameState, input: Input, dt: number) {
 
   if (input.superPressed && g.super >= 100) {
     g.super = 0;
-    for (let i = 0; i < 16; i++) {
-      const a = (i / 16) * Math.PI * 2;
-      g.bullets.push({
-        id: nid(),
-        pos: { x: h.pos.x + Math.cos(a) * 30, y: h.pos.y + Math.sin(a) * 30 },
-        vel: { x: Math.cos(a) * 620, y: Math.sin(a) * 620 },
-        owner: "hero",
-        life: 1.3,
-        damage: 40,
-        radius: 10,
-      });
-    }
-    burst(g, h.pos, "var(--primary)", 40, 380);
+    heroSuper(g);
   } else if (input.shooting && h.cooldown <= 0) {
-    fire(g, h, 3, 22, 700);
-    h.cooldown = 0.34;
+    heroFire(g);
+    h.cooldown = b.cooldown * (g.buffs.rapid > 0 ? 0.45 : 1);
   }
 
   for (const e of g.enemies) {
     e.hitFlash = Math.max(0, e.hitFlash - dt * 4);
+    e.ringTimer = Math.max(0, e.ringTimer - dt);
     const d = dist(e.pos, h.pos);
     const ang = Math.atan2(h.pos.y - e.pos.y, h.pos.x - e.pos.x);
     e.aim = ang;
-    const want = d > 300 ? 1 : d < 200 ? -0.6 : 0;
-    const strafe = Math.sin(g.time * 1.6 + e.id) * 0.5;
+    let want = 0;
+    if (e.enemyKind === "runner" || e.enemyKind === "brute") want = 1;
+    else if (e.enemyKind === "boss") want = d > 260 ? 1 : -0.3;
+    else want = d > 300 ? 1 : d < 200 ? -0.6 : 0;
+    const strafe = Math.sin(g.time * 1.6 + e.id) * (e.enemyKind === "runner" ? 0.2 : 0.5);
     moveWithCollision(
       e,
       (Math.cos(ang) * want + Math.cos(ang + Math.PI / 2) * strafe) * e.speed * dt,
       (Math.sin(ang) * want + Math.sin(ang + Math.PI / 2) * strafe) * e.speed * dt,
     );
     e.cooldown -= dt;
-    if (e.cooldown <= 0 && d < 520) {
-      fire(g, e, 1, 9, 460);
-      e.cooldown = 1.3;
+
+    if (e.enemyKind === "runner" || e.enemyKind === "brute") {
+      if (d < e.radius + h.radius + 4 && e.cooldown <= 0) {
+        damageHero(g, e.enemyKind === "brute" ? 18 : 10);
+        e.cooldown = 0.9;
+      }
+    } else if (e.enemyKind === "boss") {
+      if (e.cooldown <= 0) {
+        if (Math.random() < 0.45) {
+          const n = 12;
+          for (let i = 0; i < n; i++)
+            addBullet(g, e, (i / n) * Math.PI * 2 + g.time, {
+              dmg: 11,
+              speed: 330,
+              radius: 10,
+              life: 2,
+              color: "oklch(0.7 0.22 20)",
+            });
+          g.shake = Math.max(g.shake, 8);
+        } else {
+          for (let i = -2; i <= 2; i++)
+            addBullet(g, e, e.aim + i * 0.16, {
+              dmg: 13,
+              speed: 480,
+              radius: 11,
+              life: 2,
+              color: "oklch(0.7 0.22 20)",
+            });
+        }
+        sfx.enemyShoot();
+        e.cooldown = 1.5;
+      }
+    } else if (e.cooldown <= 0 && d < 520) {
+      addBullet(g, e, e.aim, {
+        dmg: e.enemyKind === "shooter" ? 11 : 8,
+        speed: 470,
+        radius: 8,
+        life: 1.4,
+        color: e.color,
+      });
+      sfx.enemyShoot();
+      e.cooldown = e.enemyKind === "shooter" ? 1.1 : 1.5;
     }
   }
 
-  // separation
   for (let i = 0; i < g.enemies.length; i++) {
     for (let j = i + 1; j < g.enemies.length; j++) {
       const a = g.enemies[i]!;
-      const b = g.enemies[j]!;
-      const d = dist(a.pos, b.pos);
-      const min = a.radius + b.radius;
+      const c = g.enemies[j]!;
+      const d = dist(a.pos, c.pos);
+      const min = a.radius + c.radius;
       if (d > 0 && d < min) {
         const push = ((min - d) / 2) * 0.6;
-        const nx = (a.pos.x - b.pos.x) / d;
-        const ny = (a.pos.y - b.pos.y) / d;
+        const nx = (a.pos.x - c.pos.x) / d;
+        const ny = (a.pos.y - c.pos.y) / d;
         moveWithCollision(a, nx * push, ny * push);
-        moveWithCollision(b, -nx * push, -ny * push);
+        moveWithCollision(c, -nx * push, -ny * push);
       }
     }
   }
 
-  for (const b of g.bullets) {
-    b.pos.x += b.vel.x * dt;
-    b.pos.y += b.vel.y * dt;
-    b.life -= dt;
+  for (const bl of g.bullets) {
+    bl.pos.x += bl.vel.x * dt;
+    bl.pos.y += bl.vel.y * dt;
+    bl.life -= dt;
     if (
-      b.pos.x < 0 ||
-      b.pos.y < 0 ||
-      b.pos.x > ARENA_W ||
-      b.pos.y > ARENA_H ||
-      circleHitsWall(b.pos, b.radius)
+      bl.pos.x < 0 ||
+      bl.pos.y < 0 ||
+      bl.pos.x > ARENA_W ||
+      bl.pos.y > ARENA_H ||
+      circleHitsWall(bl.pos, bl.radius)
     ) {
-      b.life = 0;
-      burst(g, b.pos, "var(--bullet)", 4, 90);
+      bl.life = 0;
+      burst(g, bl.pos, bl.color, 4, 90);
       continue;
     }
-    if (b.owner === "hero") {
+    if (bl.owner === "hero") {
       for (const e of g.enemies) {
-        if (e.hp > 0 && dist(b.pos, e.pos) < e.radius + b.radius) {
-          e.hp -= b.damage;
+        if (e.hp > 0 && !bl.hits.includes(e.id) && dist(bl.pos, e.pos) < e.radius + bl.radius) {
+          e.hp -= bl.damage;
           e.hitFlash = 1;
-          b.life = 0;
-          g.super = Math.min(100, g.super + 6);
-          burst(g, b.pos, "var(--bullet)", 6, 140);
+          bl.hits.push(e.id);
+          g.super = Math.min(100, g.super + 5);
+          burst(g, bl.pos, bl.color, 6, 140);
+          sfx.hit();
+          if (bl.pierce > 0) bl.pierce -= 1;
+          else bl.life = 0;
           break;
         }
       }
-    } else if (dist(b.pos, h.pos) < h.radius + b.radius) {
-      h.hp -= b.damage;
-      h.hitFlash = 1;
-      b.life = 0;
-      burst(g, b.pos, "var(--enemy)", 6, 140);
+    } else if (dist(bl.pos, h.pos) < h.radius + bl.radius) {
+      damageHero(g, bl.damage);
+      bl.life = 0;
+      burst(g, bl.pos, bl.color, 6, 140);
     }
   }
-  g.bullets = g.bullets.filter((b) => b.life > 0);
+  g.bullets = g.bullets.filter((bl) => bl.life > 0);
 
   const dead = g.enemies.filter((e) => e.hp <= 0);
   for (const e of dead) {
-    burst(g, e.pos, "var(--enemy)", 26, 300);
-    g.score += 100;
-    g.super = Math.min(100, g.super + 15);
-    if (Math.random() < 0.4) g.pickups.push({ id: nid(), pos: { ...e.pos }, bob: 0 });
+    const boss = e.enemyKind === "boss";
+    burst(g, e.pos, e.color, boss ? 80 : 26, boss ? 460 : 300);
+    g.score += boss ? 1500 : e.enemyKind === "brute" ? 250 : 100;
+    g.super = Math.min(100, g.super + (boss ? 60 : 14));
+    g.shake = Math.max(g.shake, boss ? 18 : 4);
+    g.texts.push({
+      pos: { ...e.pos },
+      text: boss ? "+1500" : `+${e.enemyKind === "brute" ? 250 : 100}`,
+      life: 1,
+      color: "oklch(0.9 0.16 90)",
+    });
+    sfx.kill();
+    const chance = boss ? 1 : e.enemyKind === "brute" ? 0.7 : 0.35;
+    if (Math.random() < chance) {
+      const kinds: PowerKind[] = ["heal", "heal", "damage", "speed", "shield", "rapid"];
+      const kind = kinds[Math.floor(Math.random() * kinds.length)]!;
+      g.pickups.push({ id: nid(), pos: { ...e.pos }, bob: Math.random() * 6, kind });
+    }
+    if (boss) g.bossActive = false;
   }
   g.enemies = g.enemies.filter((e) => e.hp > 0);
 
   for (const p of g.pickups) p.bob += dt * 4;
   g.pickups = g.pickups.filter((p) => {
-    if (dist(p.pos, h.pos) < h.radius + 22) {
-      h.hp = Math.min(h.maxHp, h.hp + 25);
-      burst(g, p.pos, "var(--arena)", 14, 180);
+    if (dist(p.pos, h.pos) < h.radius + 24) {
+      applyPower(g, p.kind);
+      burst(g, p.pos, "oklch(0.9 0.15 120)", 16, 200);
       return false;
     }
     return true;
   });
+
+  for (const t of g.texts) {
+    t.pos.y -= dt * 40;
+    t.life -= dt;
+  }
+  g.texts = g.texts.filter((t) => t.life > 0);
 
   stepParticles(g, dt);
 
   if (h.hp <= 0) {
     h.hp = 0;
     g.over = true;
-    burst(g, h.pos, "var(--hero)", 50, 400);
+    g.shake = 20;
+    burst(g, h.pos, b.color, 60, 420);
+    sfx.gameover();
   }
+}
+
+function applyPower(g: GameState, kind: PowerKind) {
+  const h = g.hero;
+  if (kind === "heal") h.hp = Math.min(h.maxHp, h.hp + 40);
+  else if (kind === "damage") g.buffs.damage = 9;
+  else if (kind === "speed") g.buffs.speed = 9;
+  else if (kind === "shield") g.buffs.shield = 10;
+  else g.buffs.rapid = 8;
+  g.texts.push({ pos: { ...h.pos }, text: POWER_LABEL[kind], life: 1.4, color: "oklch(0.92 0.14 140)" });
+  if (kind === "heal") sfx.pickup();
+  else sfx.power();
+}
+
+function damageHero(g: GameState, dmg: number) {
+  const h = g.hero;
+  const final = g.buffs.shield > 0 ? dmg * 0.4 : dmg;
+  h.hp -= final;
+  h.hitFlash = 1;
+  g.shake = Math.max(g.shake, 6);
+  sfx.hurt();
 }
 
 function stepParticles(g: GameState, dt: number) {
