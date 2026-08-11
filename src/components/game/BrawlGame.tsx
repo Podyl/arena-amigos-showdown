@@ -4,8 +4,20 @@ import { draw } from "./render";
 import { Joystick } from "./Joystick";
 import { BRAWLERS } from "./characters";
 import { isMuted, setMuted, unlockAudio } from "./audio";
+import { activeSynergies, SYNERGIES } from "./synergy";
+import {
+  finishMatch,
+  loadProfile,
+  powerLevel,
+  rankFor,
+  seasonDaysLeft,
+  totalTrophies,
+  xpInLevel,
+  type MatchResult,
+  type Profile,
+} from "./progression";
 
-type Phase = "menu" | "select" | "playing" | "over";
+type Phase = "menu" | "select" | "playing" | "over" | "ranks";
 
 const emptyInput = (): Input => ({
   move: { x: 0, y: 0 },
@@ -31,25 +43,31 @@ export function BrawlGame() {
     super: 0,
     enemies: 0,
     banner: "",
+    synergies: [] as { name: string; color: string }[],
     boss: null as { hp: number; maxHp: number } | null,
     buffs: { damage: 0, speed: 0, rapid: 0, shield: 0 },
   });
-  const [best, setBest] = useState(0);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [result, setResult] = useState<MatchResult | null>(null);
+  const profileRef = useRef<Profile | null>(null);
 
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
 
   useEffect(() => {
-    const stored = Number(localStorage.getItem("brawl-best") ?? 0);
-    if (stored) setBest(stored);
+    const p = loadProfile();
+    profileRef.current = p;
+    setProfile(p);
     setMutedState(isMuted());
   }, []);
 
   const start = useCallback((id: string) => {
     unlockAudio();
-    gameRef.current = createGame(id);
+    const lvl = powerLevel(profileRef.current?.brawlers[id]?.xp ?? 0);
+    gameRef.current = createGame(id, lvl);
     inputRef.current = emptyInput();
+    setResult(null);
     setPhase("playing");
   }, []);
 
@@ -114,11 +132,12 @@ export function BrawlGame() {
         if (g.over) {
           phaseRef.current = "over";
           setPhase("over");
-          setBest((b) => {
-            const nb = Math.max(b, g.score);
-            localStorage.setItem("brawl-best", String(nb));
-            return nb;
-          });
+          const prof = profileRef.current;
+          if (prof) {
+            const res = finishMatch(prof, g.brawler.id, g.score, g.wave, g.bossKills);
+            setResult(res);
+            setProfile({ ...prof });
+          }
         }
       } else {
         step(g, emptyInput(), dt);
@@ -135,6 +154,7 @@ export function BrawlGame() {
         super: Math.round(g.super),
         enemies: g.enemies.length,
         banner: g.banner?.text ?? "",
+        synergies: activeSynergies(g.buffs).map((x) => ({ name: x.name, color: x.color })),
         boss: boss ? { hp: boss.hp, maxHp: boss.maxHp } : null,
         buffs: { ...g.buffs },
       });
@@ -161,7 +181,9 @@ export function BrawlGame() {
       {/* HUD */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-4">
         <div className="rounded-xl bg-card/80 px-3 py-2 backdrop-blur">
-          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Poäng</p>
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+            Poäng
+          </p>
           <p className="text-2xl leading-none font-black text-primary">{hud.score}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -207,6 +229,24 @@ export function BrawlGame() {
           <p className="animate-pulse text-4xl font-black tracking-widest text-accent drop-shadow-lg">
             {hud.banner}
           </p>
+        </div>
+      )}
+
+      {hud.synergies.length > 0 && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-80 flex flex-wrap justify-center gap-2 px-6">
+          {hud.synergies.map((sy) => (
+            <span
+              key={sy.name}
+              className="animate-pulse rounded-full border-2 px-3 py-1 text-[10px] font-black tracking-widest uppercase backdrop-blur"
+              style={{
+                color: sy.color,
+                borderColor: sy.color,
+                background: "oklch(0.2 0.04 265 / 70%)",
+              }}
+            >
+              ⚡ {sy.name}
+            </span>
+          ))}
         </div>
       )}
 
@@ -283,7 +323,9 @@ export function BrawlGame() {
       {/* Character select */}
       {phase === "select" && (
         <div className="absolute inset-0 overflow-y-auto bg-background/92 px-5 py-8 backdrop-blur-sm">
-          <h2 className="text-center text-3xl font-black tracking-tight text-primary">VÄLJ BRAWLER</h2>
+          <h2 className="text-center text-3xl font-black tracking-tight text-primary">
+            VÄLJ BRAWLER
+          </h2>
           <div className="mx-auto mt-6 grid max-w-md grid-cols-2 gap-3">
             {BRAWLERS.map((b) => (
               <button
@@ -303,10 +345,33 @@ export function BrawlGame() {
                 <p className="mt-2 text-[10px] font-bold tracking-widest text-accent uppercase">
                   ★ {b.superName}
                 </p>
+                {profile && (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center justify-between text-[10px] font-black">
+                      <span className="text-primary">
+                        NIVÅ {powerLevel(profile.brawlers[b.id]?.xp ?? 0)}
+                      </span>
+                      <span className="text-muted-foreground">
+                        🏆 {profile.brawlers[b.id]?.trophies ?? 0}
+                      </span>
+                    </div>
+                    <span className="block h-1.5 overflow-hidden rounded-full bg-muted">
+                      <span
+                        className="block h-full rounded-full bg-primary"
+                        style={{
+                          width: `${(() => {
+                            const x = xpInLevel(profile.brawlers[b.id]?.xp ?? 0);
+                            return (x.cur / x.need) * 100;
+                          })()}%`,
+                        }}
+                      />
+                    </span>
+                  </div>
+                )}
                 <div className="mt-2 space-y-1">
                   <Stat label="HP" v={b.hp / 180} />
                   <Stat label="FART" v={(b.speed - 180) / 150} />
-                  <Stat label="DPS" v={((b.damage * b.shots) / b.cooldown) / 220} />
+                  <Stat label="DPS" v={(b.damage * b.shots) / b.cooldown / 220} />
                 </div>
               </button>
             ))}
@@ -321,53 +386,154 @@ export function BrawlGame() {
         </div>
       )}
 
-      {/* Overlays */}
-      {(phase === "menu" || phase === "over") && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-background/85 px-8 text-center backdrop-blur-sm">
-          <div>
-            <h1 className="text-5xl font-black tracking-tight text-primary drop-shadow">ARENA BRAWL</h1>
-            <p className="mt-3 text-sm text-muted-foreground">
-              {phase === "menu"
-                ? "Fyra brawlers, power-ups och boss var femte våg. Vänster spak rör dig, höger siktar och skjuter."
-                : `Du föll på våg ${hud.wave}.`}
-            </p>
-          </div>
-          {phase === "over" && (
-            <div className="flex gap-6">
-              <div>
-                <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Poäng</p>
-                <p className="text-3xl font-black text-foreground">{hud.score}</p>
-              </div>
-              <div>
-                <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Rekord</p>
-                <p className="text-3xl font-black text-accent">{best}</p>
+      {/* Ranks & season */}
+      {phase === "ranks" && profile && (
+        <div className="absolute inset-0 overflow-y-auto bg-background/95 px-5 py-8 backdrop-blur">
+          <h2 className="text-center text-3xl font-black tracking-tight text-primary">RANKING</h2>
+          <div className="mx-auto mt-6 max-w-md space-y-5">
+            <RankCard profile={profile} />
+            <div>
+              <p className="mb-2 text-[10px] font-black tracking-widest text-muted-foreground uppercase">
+                Troféer per brawler
+              </p>
+              <div className="space-y-2">
+                {[...BRAWLERS]
+                  .sort(
+                    (a, c) =>
+                      (profile.brawlers[c.id]?.trophies ?? 0) -
+                      (profile.brawlers[a.id]?.trophies ?? 0),
+                  )
+                  .map((b) => (
+                    <div
+                      key={b.id}
+                      className="flex items-center gap-3 rounded-xl border border-border bg-card/70 p-3"
+                    >
+                      <span
+                        className="size-8 rounded-full border-2 border-black/40"
+                        style={{ background: b.color }}
+                      />
+                      <span className="flex-1 text-sm font-black text-foreground">{b.name}</span>
+                      <span className="text-[10px] font-bold text-muted-foreground">
+                        NIVÅ {powerLevel(profile.brawlers[b.id]?.xp ?? 0)}
+                      </span>
+                      <span className="text-sm font-black text-primary">
+                        🏆 {profile.brawlers[b.id]?.trophies ?? 0}
+                      </span>
+                    </div>
+                  ))}
               </div>
             </div>
-          )}
-          <div className="flex flex-col items-center gap-3">
+            <div>
+              <p className="mb-2 text-[10px] font-black tracking-widest text-muted-foreground uppercase">
+                Power-up-synergier
+              </p>
+              <div className="space-y-2">
+                {SYNERGIES.map((sy) => (
+                  <div key={sy.id} className="rounded-xl border border-border bg-card/70 p-3">
+                    <p className="text-xs font-black uppercase" style={{ color: sy.color }}>
+                      {sy.name}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">{sy.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {profile.history.length > 0 && (
+              <div>
+                <p className="mb-2 text-[10px] font-black tracking-widest text-muted-foreground uppercase">
+                  Tidigare säsonger
+                </p>
+                {profile.history.map((h) => (
+                  <div
+                    key={h.season}
+                    className="flex justify-between rounded-xl border border-border bg-card/70 px-3 py-2 text-xs font-bold"
+                  >
+                    <span className="text-muted-foreground">Säsong {h.season}</span>
+                    <span className="text-foreground">
+                      {h.rank} · 🏆 {h.trophies}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             <button
               type="button"
-              onClick={() => {
-                unlockAudio();
-                setPhase("select");
-              }}
-              className="rounded-full bg-primary px-10 py-4 text-lg font-black tracking-wide text-primary-foreground uppercase shadow-[0_8px_0_oklch(0.6_0.16_85)] transition active:translate-y-1 active:shadow-[0_4px_0_oklch(0.6_0.16_85)]"
+              onClick={() => setPhase("menu")}
+              className="mx-auto block rounded-full border-2 border-accent px-8 py-3 text-sm font-black tracking-wide text-accent uppercase"
             >
-              {phase === "menu" ? "Spela" : "Välj brawler"}
+              Tillbaka
             </button>
-            {phase === "over" && (
+          </div>
+        </div>
+      )}
+
+      {/* Overlays */}
+      {(phase === "menu" || phase === "over") && (
+        <div className="absolute inset-0 overflow-y-auto bg-background/90 px-6 py-10 text-center backdrop-blur-sm">
+          <div className="mx-auto flex max-w-md flex-col items-center gap-5">
+            <div>
+              <h1 className="text-5xl font-black tracking-tight text-primary drop-shadow">
+                ARENA BRAWL
+              </h1>
+              <p className="mt-3 text-sm text-muted-foreground">
+                {phase === "menu"
+                  ? "Fyra brawlers, power-up-synergier och boss var femte våg. Klättra i rank innan säsongen tar slut."
+                  : `Du föll på våg ${hud.wave}.`}
+              </p>
+            </div>
+
+            {profile && <RankCard profile={profile} />}
+
+            {phase === "over" && result && (
+              <div className="w-full rounded-2xl border-2 border-accent/50 bg-card/80 p-4">
+                <div className="flex justify-around">
+                  <Metric label="Poäng" value={String(result.score)} />
+                  <Metric label="XP" value={`+${result.xp}`} />
+                  <Metric
+                    label="Troféer"
+                    value={`${result.trophies >= 0 ? "+" : ""}${result.trophies}`}
+                  />
+                </div>
+                {result.levelUp && (
+                  <p className="mt-3 text-sm font-black tracking-widest text-primary uppercase">
+                    ★ Nivå {result.newLevel} upplåst!
+                  </p>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col items-center gap-3">
               <button
                 type="button"
-                onClick={() => start(gameRef.current.brawler.id)}
-                className="rounded-full border-2 border-accent px-8 py-3 text-sm font-black tracking-wide text-accent uppercase"
+                onClick={() => {
+                  unlockAudio();
+                  setPhase("select");
+                }}
+                className="rounded-full bg-primary px-10 py-4 text-lg font-black tracking-wide text-primary-foreground uppercase shadow-[0_8px_0_oklch(0.6_0.16_85)] transition active:translate-y-1 active:shadow-[0_4px_0_oklch(0.6_0.16_85)]"
               >
-                Kör igen som {gameRef.current.brawler.name}
+                {phase === "menu" ? "Spela" : "Välj brawler"}
               </button>
-            )}
+              {phase === "over" && (
+                <button
+                  type="button"
+                  onClick={() => start(gameRef.current.brawler.id)}
+                  className="rounded-full border-2 border-accent px-8 py-3 text-sm font-black tracking-wide text-accent uppercase"
+                >
+                  Kör igen som {gameRef.current.brawler.name}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setPhase("ranks")}
+                className="text-xs font-black tracking-widest text-muted-foreground uppercase underline"
+              >
+                Ranking & säsong
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Dator: WASD för att röra dig, mellanslag för att skjuta, E för super.
+            </p>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Dator: WASD för att röra dig, mellanslag för att skjuta, E för super.
-          </p>
         </div>
       )}
     </div>
@@ -384,6 +550,54 @@ function Stat({ label, v }: { label: string; v: number }) {
           style={{ width: `${Math.max(8, Math.min(100, v * 100))}%` }}
         />
       </span>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+        {label}
+      </p>
+      <p className="text-2xl font-black text-foreground">{value}</p>
+    </div>
+  );
+}
+
+function RankCard({ profile }: { profile: Profile }) {
+  const total = totalTrophies(profile);
+  const rank = rankFor(total);
+  return (
+    <div className="w-full rounded-2xl border-2 border-border bg-card/80 p-4 text-left">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+            Rank
+          </p>
+          <p className="text-2xl font-black" style={{ color: rank.color }}>
+            {rank.name}
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+            Troféer
+          </p>
+          <p className="text-2xl font-black text-primary">🏆 {total}</p>
+        </div>
+      </div>
+      <span className="mt-3 block h-2 overflow-hidden rounded-full bg-muted">
+        <span
+          className="block h-full rounded-full"
+          style={{ width: `${Math.round(rank.progress * 100)}%`, background: rank.color }}
+        />
+      </span>
+      <p className="mt-2 flex justify-between text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+        <span>{rank.next ? `${rank.next.min - total} till ${rank.next.name}` : "Maxrank"}</span>
+        <span>
+          Säsong {profile.season} · {seasonDaysLeft(profile)} d kvar
+        </span>
+      </p>
     </div>
   );
 }
