@@ -4,8 +4,20 @@ import { draw } from "./render";
 import { Joystick } from "./Joystick";
 import { BRAWLERS } from "./characters";
 import { isMuted, setMuted, unlockAudio } from "./audio";
+import { activeSynergies, SYNERGIES } from "./synergy";
+import {
+  finishMatch,
+  loadProfile,
+  powerLevel,
+  rankFor,
+  seasonDaysLeft,
+  totalTrophies,
+  xpInLevel,
+  type MatchResult,
+  type Profile,
+} from "./progression";
 
-type Phase = "menu" | "select" | "playing" | "over";
+type Phase = "menu" | "select" | "playing" | "over" | "ranks";
 
 const emptyInput = (): Input => ({
   move: { x: 0, y: 0 },
@@ -31,25 +43,31 @@ export function BrawlGame() {
     super: 0,
     enemies: 0,
     banner: "",
+    synergies: [] as { name: string; color: string }[],
     boss: null as { hp: number; maxHp: number } | null,
     buffs: { damage: 0, speed: 0, rapid: 0, shield: 0 },
   });
-  const [best, setBest] = useState(0);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [result, setResult] = useState<MatchResult | null>(null);
+  const profileRef = useRef<Profile | null>(null);
 
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
 
   useEffect(() => {
-    const stored = Number(localStorage.getItem("brawl-best") ?? 0);
-    if (stored) setBest(stored);
+    const p = loadProfile();
+    profileRef.current = p;
+    setProfile(p);
     setMutedState(isMuted());
   }, []);
 
   const start = useCallback((id: string) => {
     unlockAudio();
-    gameRef.current = createGame(id);
+    const lvl = powerLevel(profileRef.current?.brawlers[id]?.xp ?? 0);
+    gameRef.current = createGame(id, lvl);
     inputRef.current = emptyInput();
+    setResult(null);
     setPhase("playing");
   }, []);
 
@@ -114,11 +132,12 @@ export function BrawlGame() {
         if (g.over) {
           phaseRef.current = "over";
           setPhase("over");
-          setBest((b) => {
-            const nb = Math.max(b, g.score);
-            localStorage.setItem("brawl-best", String(nb));
-            return nb;
-          });
+          const prof = profileRef.current;
+          if (prof) {
+            const res = finishMatch(prof, g.brawler.id, g.score, g.wave, g.bossKills);
+            setResult(res);
+            setProfile({ ...prof });
+          }
         }
       } else {
         step(g, emptyInput(), dt);
@@ -135,6 +154,7 @@ export function BrawlGame() {
         super: Math.round(g.super),
         enemies: g.enemies.length,
         banner: g.banner?.text ?? "",
+        synergies: activeSynergies(g.buffs).map((x) => ({ name: x.name, color: x.color })),
         boss: boss ? { hp: boss.hp, maxHp: boss.maxHp } : null,
         buffs: { ...g.buffs },
       });
