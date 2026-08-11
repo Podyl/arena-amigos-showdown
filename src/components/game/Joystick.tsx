@@ -38,9 +38,7 @@ export function Joystick({ onChange, onRelease, label, variant = "move" }: Props
       ref={ref}
       aria-label={label}
       className={`relative size-32 touch-none rounded-full border-2 backdrop-blur-sm select-none ${
-        variant === "shoot"
-          ? "border-accent/60 bg-accent/15"
-          : "border-primary/50 bg-secondary/40"
+        variant === "shoot" ? "border-accent/60 bg-accent/15" : "border-primary/50 bg-secondary/40"
       }`}
       onPointerDown={(e) => {
         pointer.current = e.pointerId;

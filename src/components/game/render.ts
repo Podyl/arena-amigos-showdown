@@ -41,7 +41,14 @@ function getFloor(ctx: CanvasRenderingContext2D) {
   return floorPattern;
 }
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, r);
 }
@@ -78,7 +85,14 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     ctx.fillRect(0, 0, ARENA_W, ARENA_H);
   }
   // soft light in centre
-  const grad = ctx.createRadialGradient(ARENA_W / 2, ARENA_H / 2, 80, ARENA_W / 2, ARENA_H / 2, ARENA_H * 0.8);
+  const grad = ctx.createRadialGradient(
+    ARENA_W / 2,
+    ARENA_H / 2,
+    80,
+    ARENA_W / 2,
+    ARENA_H / 2,
+    ARENA_H * 0.8,
+  );
   grad.addColorStop(0, "rgba(255,255,255,0.09)");
   grad.addColorStop(1, "rgba(0,0,0,0.35)");
   ctx.fillStyle = grad;
@@ -229,7 +243,15 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     ctx.strokeStyle = "rgba(255,255,255,0.5)";
     ctx.lineWidth = r * 0.14;
     ctx.beginPath();
-    ctx.ellipse(x - hr * 0.12, hy - hr * 0.14, hr * 0.95, hr * 0.9, 0, Math.PI * 0.95, Math.PI * 1.75);
+    ctx.ellipse(
+      x - hr * 0.12,
+      hy - hr * 0.14,
+      hr * 0.95,
+      hr * 0.9,
+      0,
+      Math.PI * 0.95,
+      Math.PI * 1.75,
+    );
     ctx.stroke();
     ctx.restore();
 
@@ -421,7 +443,14 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
   ctx.restore();
 
   // vignette
-  const vg = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.max(w, h) * 0.75);
+  const vg = ctx.createRadialGradient(
+    w / 2,
+    h / 2,
+    Math.min(w, h) * 0.35,
+    w / 2,
+    h / 2,
+    Math.max(w, h) * 0.75,
+  );
   vg.addColorStop(0, "rgba(0,0,0,0)");
   vg.addColorStop(1, "rgba(0,0,0,0.45)");
   ctx.fillStyle = vg;

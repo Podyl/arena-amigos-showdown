@@ -181,7 +181,9 @@ export function BrawlGame() {
       {/* HUD */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-4">
         <div className="rounded-xl bg-card/80 px-3 py-2 backdrop-blur">
-          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Poäng</p>
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+            Poäng
+          </p>
           <p className="text-2xl leading-none font-black text-primary">{hud.score}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -236,7 +238,11 @@ export function BrawlGame() {
             <span
               key={sy.name}
               className="animate-pulse rounded-full border-2 px-3 py-1 text-[10px] font-black tracking-widest uppercase backdrop-blur"
-              style={{ color: sy.color, borderColor: sy.color, background: "oklch(0.2 0.04 265 / 70%)" }}
+              style={{
+                color: sy.color,
+                borderColor: sy.color,
+                background: "oklch(0.2 0.04 265 / 70%)",
+              }}
             >
               ⚡ {sy.name}
             </span>
@@ -317,7 +323,9 @@ export function BrawlGame() {
       {/* Character select */}
       {phase === "select" && (
         <div className="absolute inset-0 overflow-y-auto bg-background/92 px-5 py-8 backdrop-blur-sm">
-          <h2 className="text-center text-3xl font-black tracking-tight text-primary">VÄLJ BRAWLER</h2>
+          <h2 className="text-center text-3xl font-black tracking-tight text-primary">
+            VÄLJ BRAWLER
+          </h2>
           <div className="mx-auto mt-6 grid max-w-md grid-cols-2 gap-3">
             {BRAWLERS.map((b) => (
               <button
@@ -363,7 +371,7 @@ export function BrawlGame() {
                 <div className="mt-2 space-y-1">
                   <Stat label="HP" v={b.hp / 180} />
                   <Stat label="FART" v={(b.speed - 180) / 150} />
-                  <Stat label="DPS" v={((b.damage * b.shots) / b.cooldown) / 220} />
+                  <Stat label="DPS" v={(b.damage * b.shots) / b.cooldown / 220} />
                 </div>
               </button>
             ))}
@@ -392,7 +400,8 @@ export function BrawlGame() {
                 {[...BRAWLERS]
                   .sort(
                     (a, c) =>
-                      (profile.brawlers[c.id]?.trophies ?? 0) - (profile.brawlers[a.id]?.trophies ?? 0),
+                      (profile.brawlers[c.id]?.trophies ?? 0) -
+                      (profile.brawlers[a.id]?.trophies ?? 0),
                   )
                   .map((b) => (
                     <div
@@ -463,7 +472,9 @@ export function BrawlGame() {
         <div className="absolute inset-0 overflow-y-auto bg-background/90 px-6 py-10 text-center backdrop-blur-sm">
           <div className="mx-auto flex max-w-md flex-col items-center gap-5">
             <div>
-              <h1 className="text-5xl font-black tracking-tight text-primary drop-shadow">ARENA BRAWL</h1>
+              <h1 className="text-5xl font-black tracking-tight text-primary drop-shadow">
+                ARENA BRAWL
+              </h1>
               <p className="mt-3 text-sm text-muted-foreground">
                 {phase === "menu"
                   ? "Fyra brawlers, power-up-synergier och boss var femte våg. Klättra i rank innan säsongen tar slut."
@@ -546,7 +557,9 @@ function Stat({ label, v }: { label: string; v: number }) {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">{label}</p>
+      <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+        {label}
+      </p>
       <p className="text-2xl font-black text-foreground">{value}</p>
     </div>
   );
@@ -559,13 +572,17 @@ function RankCard({ profile }: { profile: Profile }) {
     <div className="w-full rounded-2xl border-2 border-border bg-card/80 p-4 text-left">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Rank</p>
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+            Rank
+          </p>
           <p className="text-2xl font-black" style={{ color: rank.color }}>
             {rank.name}
           </p>
         </div>
         <div className="text-right">
-          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">Troféer</p>
+          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+            Troféer
+          </p>
           <p className="text-2xl font-black text-primary">🏆 {total}</p>
         </div>
       </div>

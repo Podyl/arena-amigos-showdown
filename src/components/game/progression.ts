@@ -80,7 +80,12 @@ export function loadProfile(): Profile {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Profile;
-      p = { ...p, ...parsed, brawlers: { ...p.brawlers, ...parsed.brawlers }, history: parsed.history ?? [] };
+      p = {
+        ...p,
+        ...parsed,
+        brawlers: { ...p.brawlers, ...parsed.brawlers },
+        history: parsed.history ?? [],
+      };
     } else {
       const legacy = Number(localStorage.getItem("brawl-best") ?? 0);
       if (legacy) p.bestScore = legacy;
@@ -112,7 +117,13 @@ export type MatchResult = {
 };
 
 /** Trophy gain shrinks as you climb, so ranking stays meaningful. */
-export function finishMatch(p: Profile, brawlerId: string, score: number, wave: number, bossKills: number) {
+export function finishMatch(
+  p: Profile,
+  brawlerId: string,
+  score: number,
+  wave: number,
+  bossKills: number,
+) {
   const cur = p.brawlers[brawlerId] ?? { xp: 0, trophies: 0 };
   const before = powerLevel(cur.xp);
   const xp = Math.round(score / 12 + wave * 18 + bossKills * 90);
@@ -125,7 +136,16 @@ export function finishMatch(p: Profile, brawlerId: string, score: number, wave: 
   p.bestScore = Math.max(p.bestScore, score);
   saveProfile(p);
   const newLevel = powerLevel(cur.xp);
-  return { brawlerId, score, wave, bossKills, xp, trophies, levelUp: newLevel > before, newLevel } as MatchResult;
+  return {
+    brawlerId,
+    score,
+    wave,
+    bossKills,
+    xp,
+    trophies,
+    levelUp: newLevel > before,
+    newLevel,
+  } as MatchResult;
 }
 
 export function seasonDaysLeft(p: Profile) {

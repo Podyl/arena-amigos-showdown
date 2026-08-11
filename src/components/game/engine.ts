@@ -161,13 +161,14 @@ export function createGame(brawlerId: string, level = 1): GameState {
   };
 }
 
-const ENEMY_STATS: Record<EnemyKind, { hp: number; speed: number; radius: number; color: string }> = {
-  grunt: { hp: 50, speed: 95, radius: 24, color: "oklch(0.62 0.21 25)" },
-  runner: { hp: 32, speed: 190, radius: 20, color: "oklch(0.72 0.19 60)" },
-  shooter: { hp: 44, speed: 80, radius: 23, color: "oklch(0.65 0.2 320)" },
-  brute: { hp: 150, speed: 65, radius: 36, color: "oklch(0.5 0.14 285)" },
-  boss: { hp: 900, speed: 78, radius: 62, color: "oklch(0.55 0.22 10)" },
-};
+const ENEMY_STATS: Record<EnemyKind, { hp: number; speed: number; radius: number; color: string }> =
+  {
+    grunt: { hp: 50, speed: 95, radius: 24, color: "oklch(0.62 0.21 25)" },
+    runner: { hp: 32, speed: 190, radius: 20, color: "oklch(0.72 0.19 60)" },
+    shooter: { hp: 44, speed: 80, radius: 23, color: "oklch(0.65 0.2 320)" },
+    brute: { hp: 150, speed: 65, radius: 36, color: "oklch(0.5 0.14 285)" },
+    boss: { hp: 900, speed: 78, radius: 62, color: "oklch(0.55 0.22 10)" },
+  };
 
 function spawnEnemy(g: GameState, kind: EnemyKind) {
   const s = ENEMY_STATS[kind];
@@ -217,7 +218,14 @@ function addBullet(
   g: GameState,
   e: Entity,
   a: number,
-  opts: { dmg: number; speed: number; radius: number; life: number; color: string; pierce?: number },
+  opts: {
+    dmg: number;
+    speed: number;
+    radius: number;
+    life: number;
+    color: string;
+    pierce?: number;
+  },
 ) {
   g.bullets.push({
     id: nid(),
@@ -251,7 +259,13 @@ function heroFire(g: GameState) {
       color: b.accent,
     });
   }
-  burst(g, { x: h.pos.x + Math.cos(h.aim) * 34, y: h.pos.y + Math.sin(h.aim) * 34 }, b.accent, 4, 120);
+  burst(
+    g,
+    { x: h.pos.x + Math.cos(h.aim) * 34, y: h.pos.y + Math.sin(h.aim) * 34 },
+    b.accent,
+    4,
+    120,
+  );
   if (b.id === "nova") sfx.snipe();
   else sfx.shoot();
 }
@@ -571,7 +585,12 @@ function applyPower(g: GameState, kind: PowerKind) {
   else if (kind === "speed") g.buffs.speed = 9;
   else if (kind === "shield") g.buffs.shield = 10;
   else g.buffs.rapid = 8;
-  g.texts.push({ pos: { ...h.pos }, text: POWER_LABEL[kind], life: 1.4, color: "oklch(0.92 0.14 140)" });
+  g.texts.push({
+    pos: { ...h.pos },
+    text: POWER_LABEL[kind],
+    life: 1.4,
+    color: "oklch(0.92 0.14 140)",
+  });
   if (kind === "heal") sfx.pickup();
   else sfx.power();
 }
