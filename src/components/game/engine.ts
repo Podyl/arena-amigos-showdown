@@ -1,5 +1,7 @@
 import { getBrawler, type Brawler } from "./characters";
 import { sfx } from "./audio";
+import { hasSynergy } from "./synergy";
+import { powerMods } from "./progression";
 
 export type Vec = { x: number; y: number };
 
@@ -70,6 +72,9 @@ export type Buffs = { damage: number; speed: number; rapid: number; shield: numb
 
 export type GameState = {
   brawler: Brawler;
+  powerLevel: number;
+  dmgMult: number;
+  bossKills: number;
   hero: Entity;
   enemies: Entity[];
   bullets: Bullet[];
@@ -112,15 +117,20 @@ function moveWithCollision(e: Entity, dx: number, dy: number) {
   if (!circleHitsWall({ x: e.pos.x, y: ny }, e.radius)) e.pos.y = ny;
 }
 
-export function createGame(brawlerId: string): GameState {
+export function createGame(brawlerId: string, level = 1): GameState {
   const b = getBrawler(brawlerId);
+  const mods = powerMods(level);
+  const hp = Math.round(b.hp * mods.hp);
   return {
     brawler: b,
+    powerLevel: level,
+    dmgMult: mods.damage,
+    bossKills: 0,
     hero: {
       id: nid(),
       pos: { x: ARENA_W / 2, y: ARENA_H - 220 },
-      hp: b.hp,
-      maxHp: b.hp,
+      hp,
+      maxHp: hp,
       radius: b.radius,
       aim: -Math.PI / 2,
       cooldown: 0,
@@ -228,14 +238,16 @@ export type Input = { move: Vec; aim: Vec; shooting: boolean; superPressed: bool
 function heroFire(g: GameState) {
   const b = g.brawler;
   const h = g.hero;
-  const mult = g.buffs.damage > 0 ? 1.8 : 1;
+  const mult =
+    (g.buffs.damage > 0 ? 1.8 : 1) * g.dmgMult * (hasSynergy(g.buffs, "overload") ? 1.25 : 1);
+  const gale = hasSynergy(g.buffs, "gale");
   for (let i = 0; i < b.shots; i++) {
     const off = (i - (b.shots - 1) / 2) * b.spread;
     addBullet(g, h, h.aim + off, {
       dmg: b.damage * mult,
-      speed: b.bulletSpeed,
+      speed: b.bulletSpeed * (gale ? 1.3 : 1),
       radius: b.bulletRadius,
-      life: b.bulletLife,
+      life: b.bulletLife * (gale ? 1.25 : 1),
       color: b.accent,
     });
   }
@@ -365,7 +377,7 @@ export function step(g: GameState, input: Input, dt: number) {
   for (const k of ["damage", "speed", "rapid", "shield"] as const)
     g.buffs[k] = Math.max(0, g.buffs[k] - dt);
 
-  const speed = h.speed * (g.buffs.speed > 0 ? 1.45 : 1);
+  const speed = h.speed * (g.buffs.speed > 0 ? (hasSynergy(g.buffs, "phantom") ? 1.75 : 1.45) : 1);
   moveWithCollision(h, input.move.x * speed * dt, input.move.y * speed * dt);
 
   if (input.aim.x || input.aim.y) h.aim = Math.atan2(input.aim.y, input.aim.x);
@@ -481,7 +493,8 @@ export function step(g: GameState, input: Input, dt: number) {
           e.hp -= bl.damage;
           e.hitFlash = 1;
           bl.hits.push(e.id);
-          g.super = Math.min(100, g.super + 5);
+          g.super = Math.min(100, g.super + (hasSynergy(g.buffs, "omega") ? 10 : 5));
+          if (hasSynergy(g.buffs, "berserk")) h.hp = Math.min(h.maxHp, h.hp + bl.damage * 0.12);
           burst(g, bl.pos, bl.color, 6, 140);
           sfx.hit();
           if (bl.pierce > 0) bl.pierce -= 1;
@@ -517,7 +530,10 @@ export function step(g: GameState, input: Input, dt: number) {
       const kind = kinds[Math.floor(Math.random() * kinds.length)]!;
       g.pickups.push({ id: nid(), pos: { ...e.pos }, bob: Math.random() * 6, kind });
     }
-    if (boss) g.bossActive = false;
+    if (boss) {
+      g.bossActive = false;
+      g.bossKills += 1;
+    }
   }
   g.enemies = g.enemies.filter((e) => e.hp > 0);
 
@@ -562,7 +578,7 @@ function applyPower(g: GameState, kind: PowerKind) {
 
 function damageHero(g: GameState, dmg: number) {
   const h = g.hero;
-  const final = g.buffs.shield > 0 ? dmg * 0.4 : dmg;
+  const final = g.buffs.shield > 0 ? dmg * (hasSynergy(g.buffs, "phantom") ? 0.25 : 0.4) : dmg;
   h.hp -= final;
   h.hitFlash = 1;
   g.shake = Math.max(g.shake, 6);
