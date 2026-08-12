@@ -6,6 +6,14 @@ import { BRAWLERS } from "./characters";
 import { isMuted, setMuted, unlockAudio } from "./audio";
 import { activeSynergies, SYNERGIES } from "./synergy";
 import {
+  getSkin,
+  loadSkinChoices,
+  rarityColor,
+  saveSkinChoice,
+  skinsFor,
+  SKINS,
+} from "./skins";
+import {
   finishMatch,
   loadProfile,
   powerLevel,
@@ -47,6 +55,7 @@ export function BrawlGame() {
     boss: null as { hp: number; maxHp: number } | null,
     buffs: { damage: 0, speed: 0, rapid: 0, shield: 0 },
   });
+  const [skinPick, setSkinPick] = useState<Record<string, string>>({});
   const [profile, setProfile] = useState<Profile | null>(null);
   const [result, setResult] = useState<MatchResult | null>(null);
   const profileRef = useRef<Profile | null>(null);
@@ -60,12 +69,13 @@ export function BrawlGame() {
     profileRef.current = p;
     setProfile(p);
     setMutedState(isMuted());
+    setSkinPick(loadSkinChoices());
   }, []);
 
-  const start = useCallback((id: string) => {
+  const start = useCallback((id: string, skinId?: string) => {
     unlockAudio();
     const lvl = powerLevel(profileRef.current?.brawlers[id]?.xp ?? 0);
-    gameRef.current = createGame(id, lvl);
+    gameRef.current = createGame(id, lvl, skinId ?? loadSkinChoices()[id]);
     inputRef.current = emptyInput();
     setResult(null);
     setPhase("playing");
@@ -376,9 +386,63 @@ export function BrawlGame() {
               </button>
             ))}
           </div>
+          {(() => {
+            const trophies = profile?.brawlers[pick]?.trophies ?? 0;
+            const current = getSkin(skinPick[pick], pick);
+            return (
+              <div className="mx-auto mt-6 max-w-md">
+                <p className="mb-2 text-[10px] font-black tracking-widest text-muted-foreground uppercase">
+                  Skins · {current.name}
+                </p>
+                <div className="flex gap-3 overflow-x-auto pb-2">
+                  {skinsFor(pick).map((sk) => {
+                    const locked = trophies < sk.unlock;
+                    const active = current.id === sk.id;
+                    return (
+                      <button
+                        key={sk.id}
+                        type="button"
+                        disabled={locked}
+                        onClick={() => {
+                          saveSkinChoice(pick, sk.id);
+                          setSkinPick((p) => ({ ...p, [pick]: sk.id }));
+                        }}
+                        className={`min-w-28 shrink-0 rounded-2xl border-2 p-2 text-center transition ${
+                          active ? "bg-card" : "bg-card/50"
+                        } ${locked ? "opacity-50" : ""}`}
+                        style={{ borderColor: active ? rarityColor(sk.rarity) : "var(--border)" }}
+                      >
+                        <span
+                          className="mx-auto mb-2 block size-10 rounded-full border-4 border-black/30"
+                          style={{
+                            background: sk.color,
+                            boxShadow: sk.aura ? `0 0 14px ${sk.aura}` : undefined,
+                          }}
+                        />
+                        <span className="block text-[11px] font-black text-foreground">
+                          {sk.name}
+                        </span>
+                        <span
+                          className="block text-[9px] font-bold tracking-widest uppercase"
+                          style={{ color: rarityColor(sk.rarity) }}
+                        >
+                          {sk.rarity}
+                        </span>
+                        {locked && (
+                          <span className="mt-1 block text-[9px] font-bold text-muted-foreground">
+                            🔒 {sk.unlock} 🏆
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
           <button
             type="button"
-            onClick={() => start(pick)}
+            onClick={() => start(pick, skinPick[pick])}
             className="mx-auto mt-7 block rounded-full bg-primary px-12 py-4 text-lg font-black tracking-wide text-primary-foreground uppercase shadow-[0_8px_0_oklch(0.6_0.16_85)] transition active:translate-y-1"
           >
             Kör
@@ -424,6 +488,42 @@ export function BrawlGame() {
               </div>
             </div>
             <div>
+              <p className="mb-2 text-[10px] font-black tracking-widest text-muted-foreground uppercase">
+                Kosmetika ·{" "}
+                {
+                  SKINS.filter((s) => (profile.brawlers[s.brawlerId]?.trophies ?? 0) >= s.unlock)
+                    .length
+                }
+                /{SKINS.length} skins
+              </p>
+              <div className="mb-5 grid grid-cols-2 gap-2">
+                {SKINS.map((sk) => {
+                  const locked = (profile.brawlers[sk.brawlerId]?.trophies ?? 0) < sk.unlock;
+                  return (
+                    <div
+                      key={sk.id}
+                      className={`flex items-center gap-2 rounded-xl border bg-card/70 p-2 ${locked ? "opacity-45" : ""}`}
+                      style={{ borderColor: rarityColor(sk.rarity) }}
+                    >
+                      <span
+                        className="size-6 shrink-0 rounded-full border-2 border-black/40"
+                        style={{ background: sk.color }}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[11px] font-black text-foreground">
+                          {sk.name}
+                        </span>
+                        <span
+                          className="block text-[9px] font-bold tracking-widest uppercase"
+                          style={{ color: rarityColor(sk.rarity) }}
+                        >
+                          {locked ? `🔒 ${sk.unlock} 🏆` : sk.rarity}
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
               <p className="mb-2 text-[10px] font-black tracking-widest text-muted-foreground uppercase">
                 Power-up-synergier
               </p>
@@ -516,7 +616,7 @@ export function BrawlGame() {
               {phase === "over" && (
                 <button
                   type="button"
-                  onClick={() => start(gameRef.current.brawler.id)}
+                  onClick={() => start(gameRef.current.brawler.id, gameRef.current.skin.id)}
                   className="rounded-full border-2 border-accent px-8 py-3 text-sm font-black tracking-wide text-accent uppercase"
                 >
                   Kör igen som {gameRef.current.brawler.name}

@@ -2,6 +2,7 @@ import { getBrawler, type Brawler } from "./characters";
 import { sfx } from "./audio";
 import { hasSynergy } from "./synergy";
 import { powerMods } from "./progression";
+import { getSkin, type Skin } from "./skins";
 
 export type Vec = { x: number; y: number };
 
@@ -43,6 +44,7 @@ export type Entity = {
 export type Bullet = {
   id: number;
   pos: Vec;
+  trail: Vec[];
   vel: Vec;
   owner: "hero" | "enemy";
   life: number;
@@ -52,6 +54,21 @@ export type Bullet = {
   hits: number[];
   color: string;
 };
+
+/** Expanding VFX ring (shockwaves, spawn telegraphs, super blasts). */
+export type Ring = {
+  pos: Vec;
+  r: number;
+  target: number;
+  life: number;
+  max: number;
+  color: string;
+  width: number;
+  fill?: boolean;
+};
+
+/** Scorch marks left on the floor. */
+export type Decal = { pos: Vec; r: number; life: number; max: number; color: string };
 
 export type Particle = {
   pos: Vec;
@@ -72,6 +89,7 @@ export type Buffs = { damage: number; speed: number; rapid: number; shield: numb
 
 export type GameState = {
   brawler: Brawler;
+  skin: Skin;
   powerLevel: number;
   dmgMult: number;
   bossKills: number;
@@ -79,6 +97,8 @@ export type GameState = {
   enemies: Entity[];
   bullets: Bullet[];
   particles: Particle[];
+  rings: Ring[];
+  decals: Decal[];
   pickups: Pickup[];
   texts: FloatText[];
   buffs: Buffs;
@@ -117,12 +137,14 @@ function moveWithCollision(e: Entity, dx: number, dy: number) {
   if (!circleHitsWall({ x: e.pos.x, y: ny }, e.radius)) e.pos.y = ny;
 }
 
-export function createGame(brawlerId: string, level = 1): GameState {
+export function createGame(brawlerId: string, level = 1, skinId?: string): GameState {
   const b = getBrawler(brawlerId);
+  const skin = getSkin(skinId, b.id);
   const mods = powerMods(level);
   const hp = Math.round(b.hp * mods.hp);
   return {
     brawler: b,
+    skin,
     powerLevel: level,
     dmgMult: mods.damage,
     bossKills: 0,
@@ -138,12 +160,14 @@ export function createGame(brawlerId: string, level = 1): GameState {
       enemyKind: "grunt",
       hitFlash: 0,
       speed: b.speed,
-      color: b.color,
+      color: skin.color,
       ringTimer: 0,
     },
     enemies: [],
     bullets: [],
     particles: [],
+    rings: [],
+    decals: [],
     pickups: [],
     texts: [],
     buffs: { damage: 0, speed: 0, rapid: 0, shield: 0 },
@@ -197,6 +221,10 @@ function spawnEnemy(g: GameState, kind: EnemyKind) {
     ringTimer: 3,
   });
   burst(g, pos, s.color, kind === "boss" ? 60 : 12, kind === "boss" ? 420 : 220);
+  addRing(g, pos, kind === "boss" ? 220 : 90, s.color, {
+    life: kind === "boss" ? 0.9 : 0.5,
+    width: kind === "boss" ? 14 : 6,
+  });
 }
 
 export function burst(g: GameState, pos: Vec, hue: string, n: number, power = 220) {
@@ -214,6 +242,30 @@ export function burst(g: GameState, pos: Vec, hue: string, n: number, power = 22
   }
 }
 
+export function addRing(
+  g: GameState,
+  pos: Vec,
+  target: number,
+  color: string,
+  opts: { life?: number; width?: number; fill?: boolean; from?: number } = {},
+) {
+  g.rings.push({
+    pos: { ...pos },
+    r: opts.from ?? 8,
+    target,
+    life: opts.life ?? 0.45,
+    max: opts.life ?? 0.45,
+    color,
+    width: opts.width ?? 6,
+    fill: opts.fill ?? false,
+  });
+}
+
+export function addDecal(g: GameState, pos: Vec, r: number, color: string) {
+  g.decals.push({ pos: { ...pos }, r, life: 6, max: 6, color });
+  if (g.decals.length > 40) g.decals.shift();
+}
+
 function addBullet(
   g: GameState,
   e: Entity,
@@ -229,6 +281,7 @@ function addBullet(
 ) {
   g.bullets.push({
     id: nid(),
+    trail: [],
     pos: { x: e.pos.x + Math.cos(a) * (e.radius + 6), y: e.pos.y + Math.sin(a) * (e.radius + 6) },
     vel: { x: Math.cos(a) * opts.speed, y: Math.sin(a) * opts.speed },
     owner: e.kind,
@@ -249,6 +302,7 @@ function heroFire(g: GameState) {
   const mult =
     (g.buffs.damage > 0 ? 1.8 : 1) * g.dmgMult * (hasSynergy(g.buffs, "overload") ? 1.25 : 1);
   const gale = hasSynergy(g.buffs, "gale");
+  const shot = g.skin.accent;
   for (let i = 0; i < b.shots; i++) {
     const off = (i - (b.shots - 1) / 2) * b.spread;
     addBullet(g, h, h.aim + off, {
@@ -256,16 +310,12 @@ function heroFire(g: GameState) {
       speed: b.bulletSpeed * (gale ? 1.3 : 1),
       radius: b.bulletRadius,
       life: b.bulletLife * (gale ? 1.25 : 1),
-      color: b.accent,
+      color: shot,
     });
   }
-  burst(
-    g,
-    { x: h.pos.x + Math.cos(h.aim) * 34, y: h.pos.y + Math.sin(h.aim) * 34 },
-    b.accent,
-    4,
-    120,
-  );
+  const mz = { x: h.pos.x + Math.cos(h.aim) * 34, y: h.pos.y + Math.sin(h.aim) * 34 };
+  burst(g, mz, shot, 5, 150);
+  addRing(g, mz, 26, shot, { life: 0.16, width: 4, from: 4 });
   if (b.id === "nova") sfx.snipe();
   else sfx.shoot();
 }
@@ -274,8 +324,11 @@ function heroSuper(g: GameState) {
   const b = g.brawler;
   const h = g.hero;
   sfx.superShot();
-  g.shake = Math.max(g.shake, 14);
-  burst(g, h.pos, b.accent, 46, 400);
+  g.shake = Math.max(g.shake, 16);
+  const sc = g.skin.accent;
+  burst(g, h.pos, sc, 56, 420);
+  addRing(g, h.pos, 320, sc, { life: 0.6, width: 16 });
+  addRing(g, h.pos, 200, "#ffffff", { life: 0.35, width: 8 });
   if (b.superKind === "nova") {
     for (let i = 0; i < 18; i++)
       addBullet(g, h, (i / 18) * Math.PI * 2, {
@@ -283,7 +336,7 @@ function heroSuper(g: GameState) {
         speed: 620,
         radius: 11,
         life: 1.3,
-        color: b.accent,
+        color: sc,
       });
   } else if (b.superKind === "beam") {
     for (let i = 0; i < 5; i++)
@@ -292,7 +345,7 @@ function heroSuper(g: GameState) {
         speed: 1200 + i * 40,
         radius: 14,
         life: 1.6,
-        color: b.accent,
+        color: sc,
         pierce: 6,
       });
   } else if (b.superKind === "shock") {
@@ -302,7 +355,7 @@ function heroSuper(g: GameState) {
         speed: 420,
         radius: 16,
         life: 0.75,
-        color: b.accent,
+        color: sc,
       });
     for (const e of g.enemies) {
       const d = dist(e.pos, h.pos);
@@ -319,7 +372,7 @@ function heroSuper(g: GameState) {
         speed: 700 + Math.random() * 400,
         radius: 7,
         life: 1.2,
-        color: b.accent,
+        color: sc,
       });
     }
   }
@@ -487,6 +540,8 @@ export function step(g: GameState, input: Input, dt: number) {
   }
 
   for (const bl of g.bullets) {
+    bl.trail.push({ x: bl.pos.x, y: bl.pos.y });
+    if (bl.trail.length > 6) bl.trail.shift();
     bl.pos.x += bl.vel.x * dt;
     bl.pos.y += bl.vel.y * dt;
     bl.life -= dt;
@@ -527,7 +582,13 @@ export function step(g: GameState, input: Input, dt: number) {
   const dead = g.enemies.filter((e) => e.hp <= 0);
   for (const e of dead) {
     const boss = e.enemyKind === "boss";
-    burst(g, e.pos, e.color, boss ? 80 : 26, boss ? 460 : 300);
+    burst(g, e.pos, e.color, boss ? 110 : 30, boss ? 460 : 300);
+    addRing(g, e.pos, boss ? 340 : 110, boss ? "oklch(0.9 0.19 60)" : e.color, {
+      life: boss ? 0.8 : 0.4,
+      width: boss ? 18 : 7,
+    });
+    if (boss) addRing(g, e.pos, 180, "#ffffff", { life: 0.5, width: 10 });
+    addDecal(g, e.pos, e.radius * (boss ? 2.2 : 1.3), e.color);
     g.score += boss ? 1500 : e.enemyKind === "brute" ? 250 : 100;
     g.super = Math.min(100, g.super + (boss ? 60 : 14));
     g.shake = Math.max(g.shake, boss ? 18 : 4);
@@ -555,7 +616,8 @@ export function step(g: GameState, input: Input, dt: number) {
   g.pickups = g.pickups.filter((p) => {
     if (dist(p.pos, h.pos) < h.radius + 24) {
       applyPower(g, p.kind);
-      burst(g, p.pos, "oklch(0.9 0.15 120)", 16, 200);
+      burst(g, p.pos, "oklch(0.9 0.15 120)", 22, 220);
+      addRing(g, p.pos, 80, "oklch(0.9 0.15 120)", { life: 0.35, width: 5 });
       return false;
     }
     return true;
@@ -573,7 +635,8 @@ export function step(g: GameState, input: Input, dt: number) {
     h.hp = 0;
     g.over = true;
     g.shake = 20;
-    burst(g, h.pos, b.color, 60, 420);
+    burst(g, h.pos, g.skin.color, 70, 420);
+    addRing(g, h.pos, 260, g.skin.color, { life: 0.7, width: 14 });
     sfx.gameover();
   }
 }
@@ -604,7 +667,19 @@ function damageHero(g: GameState, dmg: number) {
   sfx.hurt();
 }
 
+function stepFx(g: GameState, dt: number) {
+  for (const r of g.rings) {
+    r.life -= dt;
+    const t = 1 - Math.max(0, r.life) / r.max;
+    r.r = 8 + (r.target - 8) * (1 - Math.pow(1 - t, 3));
+  }
+  g.rings = g.rings.filter((r) => r.life > 0);
+  for (const d of g.decals) d.life -= dt;
+  g.decals = g.decals.filter((d) => d.life > 0);
+}
+
 function stepParticles(g: GameState, dt: number) {
+  stepFx(g, dt);
   for (const p of g.particles) {
     p.pos.x += p.vel.x * dt;
     p.pos.y += p.vel.y * dt;
