@@ -257,7 +257,7 @@ export function addRing(
     max: opts.life ?? 0.45,
     color,
     width: opts.width ?? 6,
-    fill: opts.fill,
+    fill: opts.fill ?? false,
   });
 }
 
