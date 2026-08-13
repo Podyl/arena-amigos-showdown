@@ -28,6 +28,62 @@ function roundRect(
   ctx.roundRect(x, y, w, h, r);
 }
 
+/* ---------------- character animation ---------------- */
+
+/** Per-unit animation state derived from motion (presentation only). */
+type Anim = {
+  px: number;
+  py: number;
+  vx: number;
+  vy: number;
+  sp: number;
+  phase: number;
+  lean: number;
+  aim: number;
+  land: number;
+};
+
+const anims = new Map<number, Anim>();
+let animLastTime = 0;
+let animDt = 1 / 60;
+
+const lerpAngle = (a: number, b: number, t: number) => {
+  let d = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+  return a + d * t;
+};
+
+function tickAnim(id: number, x: number, y: number, aim: number, speedRef: number): Anim {
+  const dt = animDt;
+  let a = anims.get(id);
+  if (!a) {
+    a = { px: x, py: y, vx: 0, vy: 0, sp: 0, phase: Math.random() * 6.28, lean: 0, aim, land: 0 };
+    anims.set(id, a);
+  }
+  const ivx = dt > 0 ? (x - a.px) / dt : 0;
+  const ivy = dt > 0 ? (y - a.py) / dt : 0;
+  // smooth velocity so steps don't jitter on collisions
+  const k = Math.min(1, dt * 12);
+  a.vx += (ivx - a.vx) * k;
+  a.vy += (ivy - a.vy) * k;
+  a.px = x;
+  a.py = y;
+  const sp = Math.hypot(a.vx, a.vy);
+  a.sp = Math.min(1, sp / Math.max(60, speedRef));
+  // walk cycle speed follows actual pace; idle keeps a slow breathing cycle
+  a.phase += dt * (2.2 + a.sp * 12);
+  if (a.phase > Math.PI * 200) a.phase -= Math.PI * 200;
+  const targetLean = Math.max(-0.22, Math.min(0.22, (a.vx / Math.max(120, speedRef)) * 0.22));
+  a.lean += (targetLean - a.lean) * Math.min(1, dt * 8);
+  a.aim = lerpAngle(a.aim, aim, Math.min(1, dt * 14));
+  a.land = Math.max(0, a.land - dt * 3);
+  return a;
+}
+
+function pruneAnims(alive: Set<number>) {
+  if (anims.size < 64) return;
+  for (const id of anims.keys()) if (!alive.has(id)) anims.delete(id);
+}
+
 /* ---------------- floor ---------------- */
 
 let floorPattern: CanvasPattern | null = null;
