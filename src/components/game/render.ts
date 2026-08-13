@@ -125,6 +125,21 @@ function pruneAnims(alive: Set<number>) {
   for (const id of anims.keys()) if (!alive.has(id)) anims.delete(id);
 }
 
+/* ---------------- body archetypes ---------------- */
+
+export type BuildKind = "bulky" | "lanky" | "tank" | "nimble";
+
+/** Silhouette metrics per archetype so brawlers don't share one body. */
+const BUILDS: Record<
+  BuildKind,
+  { tw: number; th: number; tr: number; hr: number; stance: number; foot: number; arm: number }
+> = {
+  bulky: { tw: 1.34, th: 0.86, tr: 0.36, hr: 0.76, stance: 0.44, foot: 0.31, arm: 1 },
+  lanky: { tw: 0.96, th: 1.02, tr: 0.42, hr: 0.64, stance: 0.34, foot: 0.25, arm: 1.18 },
+  tank: { tw: 1.62, th: 0.78, tr: 0.3, hr: 0.86, stance: 0.54, foot: 0.36, arm: 0.86 },
+  nimble: { tw: 0.88, th: 0.74, tr: 0.38, hr: 0.72, stance: 0.3, foot: 0.24, arm: 1.06 },
+};
+
 /* ---------------- floor ---------------- */
 
 let floorPattern: CanvasPattern | null = null;
@@ -577,8 +592,10 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     const pushX = -Math.cos(aim) * r * 0.16 * kick - Math.cos(flinchAng) * r * 0.2 * flinch;
     const pushY = -Math.sin(aim) * r * 0.12 * kick - Math.sin(flinchAng) * r * 0.14 * flinch;
     const shake = flinch * flinch * r * 0.1;
-    const bx = x + pushX + (Math.random() - 0.5) * shake;
-    const by = y + bob + pushY + (Math.random() - 0.5) * shake;
+    const jx = (Math.random() - 0.5) * shake;
+    const jy = (Math.random() - 0.5) * shake;
+    const bx = x;
+    const by = y + bob;
     const face = Math.cos(aim) >= 0 ? 1 : -1;
     const ink = "rgba(20,12,26,0.9)";
     const outline = (w2: number) => {
@@ -606,7 +623,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
 
     // everything above the feet pivots and squashes with the walk cycle
     ctx.save();
-    ctx.translate(x, y + r * 0.85);
+    ctx.translate(x + pushX + jx, y + r * 0.85 + pushY + jy);
     ctx.rotate(lean + flinch * 0.16 * (Math.cos(flinchAng) >= 0 ? -1 : 1));
     ctx.scale(sqx, sqy);
     ctx.translate(-x, -(y + r * 0.85));
@@ -685,7 +702,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     ctx.restore();
 
     // head
-    const hr = r * 0.78;
+    const hr = r * B.hr;
     const hy = by - r * 0.42 + Math.sin(phase * 2 + 0.6) * r * 0.03 * sp;
     const hg = ctx.createRadialGradient(x - hr * 0.4, hy - hr * 0.5, hr * 0.15, x, hy, hr * 1.2);
     hg.addColorStop(0, "rgba(255,255,255,0.32)");
