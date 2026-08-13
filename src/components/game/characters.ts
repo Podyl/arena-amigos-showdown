@@ -19,6 +19,8 @@ export type Brawler = {
   superKind: SuperKind;
   superName: string;
   hat: "cap" | "horns" | "helmet" | "antenna";
+  /** Silhouette archetype used by the renderer to give each brawler a unique body. */
+  build: "bulky" | "lanky" | "tank" | "nimble";
 };
 
 export const BRAWLERS: Brawler[] = [
@@ -41,6 +43,7 @@ export const BRAWLERS: Brawler[] = [
     superKind: "nova",
     superName: "Eldstorm",
     hat: "cap",
+    build: "bulky",
   },
   {
     id: "nova",
@@ -61,6 +64,7 @@ export const BRAWLERS: Brawler[] = [
     superKind: "beam",
     superName: "Jonstråle",
     hat: "antenna",
+    build: "lanky",
   },
   {
     id: "bunker",
@@ -81,6 +85,7 @@ export const BRAWLERS: Brawler[] = [
     superKind: "shock",
     superName: "Chockvåg",
     hat: "helmet",
+    build: "tank",
   },
   {
     id: "vex",
@@ -101,6 +106,7 @@ export const BRAWLERS: Brawler[] = [
     superKind: "swarm",
     superName: "Svärmsalva",
     hat: "horns",
+    build: "nimble",
   },
 ];
 
