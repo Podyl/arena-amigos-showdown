@@ -41,6 +41,14 @@ type Anim = {
   lean: number;
   aim: number;
   land: number;
+  /** shot recoil 1 -> 0 */
+  fire: number;
+  /** hit flinch 1 -> 0 */
+  hit: number;
+  /** direction the unit was facing when hit */
+  hitAng: number;
+  pcd: number;
+  pflash: number;
 };
 
 const anims = new Map<number, Anim>();
@@ -52,13 +60,46 @@ const lerpAngle = (a: number, b: number, t: number) => {
   return a + d * t;
 };
 
-function tickAnim(id: number, x: number, y: number, aim: number, speedRef: number): Anim {
+function tickAnim(
+  id: number,
+  x: number,
+  y: number,
+  aim: number,
+  speedRef: number,
+  cd = 0,
+  flash = 0,
+): Anim {
   const dt = animDt;
   let a = anims.get(id);
   if (!a) {
-    a = { px: x, py: y, vx: 0, vy: 0, sp: 0, phase: Math.random() * 6.28, lean: 0, aim, land: 0 };
+    a = {
+      px: x,
+      py: y,
+      vx: 0,
+      vy: 0,
+      sp: 0,
+      phase: Math.random() * 6.28,
+      lean: 0,
+      aim,
+      land: 0,
+      fire: 0,
+      hit: 0,
+      hitAng: aim,
+      pcd: cd,
+      pflash: flash,
+    };
     anims.set(id, a);
   }
+  // a cooldown that jumped up means a shot just left the barrel
+  if (cd > a.pcd + 0.02) a.fire = 1;
+  a.pcd = cd;
+  if (flash > a.pflash + 0.05) {
+    a.hit = 1;
+    a.hitAng = aim;
+  }
+  a.pflash = flash;
+  a.fire = Math.max(0, a.fire - dt * 5.5);
+  a.hit = Math.max(0, a.hit - dt * 4.5);
   const ivx = dt > 0 ? (x - a.px) / dt : 0;
   const ivy = dt > 0 ? (y - a.py) / dt : 0;
   // smooth velocity so steps don't jitter on collisions
@@ -467,7 +508,14 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     ring = 0,
     an?: Anim,
     skin?: Skin,
+    build: BuildKind = "bulky",
   ) => {
+    const B = BUILDS[build];
+    const fire = an?.fire ?? 0;
+    // anticipation on the way up, snap-back recoil on the way down
+    const kick = Math.sin(Math.min(1, fire) * Math.PI) * (fire > 0.75 ? -0.35 : 1);
+    const flinch = an?.hit ?? 0;
+    const flinchAng = an?.hitAng ?? 0;
     const sp = an?.sp ?? 0;
     const phase = an?.phase ?? 0;
     const lean = an?.lean ?? 0;
@@ -477,7 +525,12 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     const breathe = Math.sin(phase * 0.9) * r * 0.03 * (1 - sp);
     const bob = bounce + breathe;
     // squash & stretch around the feet
-    const sqy = 1 + Math.sin(phase * 2) * 0.06 * sp + Math.sin(phase * 0.9) * 0.012 * (1 - sp);
+    const sqy =
+      1 +
+      Math.sin(phase * 2) * 0.06 * sp +
+      Math.sin(phase * 0.9) * 0.012 * (1 - sp) -
+      kick * 0.09 +
+      flinch * 0.1;
     const sqx = 1 / sqy;
     // ground-plane movement direction for foot placement
     const mvLen = Math.hypot(an?.vx ?? 0, an?.vy ?? 0) || 1;
@@ -521,7 +574,11 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     ctx.fill();
     ctx.restore();
 
-    const by = y + bob;
+    const pushX = -Math.cos(aim) * r * 0.16 * kick - Math.cos(flinchAng) * r * 0.2 * flinch;
+    const pushY = -Math.sin(aim) * r * 0.12 * kick - Math.sin(flinchAng) * r * 0.14 * flinch;
+    const shake = flinch * flinch * r * 0.1;
+    const bx = x + pushX + (Math.random() - 0.5) * shake;
+    const by = y + bob + pushY + (Math.random() - 0.5) * shake;
     const face = Math.cos(aim) >= 0 ? 1 : -1;
     const ink = "rgba(20,12,26,0.9)";
     const outline = (w2: number) => {
@@ -537,12 +594,12 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       const ph = phase + (s > 0 ? 0 : Math.PI);
       const step = Math.cos(ph) * sp;
       const lift = Math.max(0, Math.sin(ph)) * sp;
-      const fx = x + s * r * 0.42 * (1 - sp * 0.35) + dirX * step * r * 0.5;
+      const fx = x + s * r * B.stance * (1 - sp * 0.35) + dirX * step * r * 0.5;
       const fy = y + r * 0.86 + dirY * step * r * 0.22 - lift * r * 0.3;
       ctx.save();
       ctx.fillStyle = "rgba(20,12,26,0.85)";
       ctx.beginPath();
-      ctx.ellipse(fx, fy, r * 0.3, r * 0.19 * (1 + lift * 0.3), lean * 0.8, 0, Math.PI * 2);
+      ctx.ellipse(fx, fy, r * B.foot, r * B.foot * 0.63 * (1 + lift * 0.3), lean * 0.8, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
@@ -550,7 +607,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     // everything above the feet pivots and squashes with the walk cycle
     ctx.save();
     ctx.translate(x, y + r * 0.85);
-    ctx.rotate(lean);
+    ctx.rotate(lean + flinch * 0.16 * (Math.cos(flinchAng) >= 0 ? -1 : 1));
     ctx.scale(sqx, sqy);
     ctx.translate(-x, -(y + r * 0.85));
 
@@ -570,22 +627,30 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
 
     // torso
     ctx.beginPath();
-    ctx.roundRect(x - r * 0.62, by + r * 0.05, r * 1.24, r * 0.85, r * 0.35);
+    ctx.roundRect(
+      bx - r * B.tw * 0.5,
+      by + r * 0.05,
+      r * B.tw,
+      r * B.th,
+      r * B.tr,
+    );
     ctx.fillStyle = body;
     ctx.fill();
     outline(r * 0.16);
     ctx.save();
     ctx.clip();
     ctx.fillStyle = "rgba(0,0,0,0.22)";
-    ctx.fillRect(x - r, by + r * 0.5, r * 2, r);
+    ctx.fillRect(bx - r, by + r * B.th * 0.6, r * 2, r);
     ctx.fillStyle = "rgba(255,255,255,0.16)";
-    ctx.fillRect(x - r * 0.55, by + r * 0.1, r * 0.3, r * 0.8);
+    ctx.fillRect(bx - r * B.tw * 0.44, by + r * 0.1, r * 0.26, r * B.th);
     ctx.restore();
 
     // arm + weapon
     ctx.save();
-    ctx.translate(x, by + r * 0.3);
-    ctx.rotate(aim + Math.sin(phase) * 0.1 * sp);
+    ctx.translate(bx, by + r * 0.3);
+    ctx.rotate(aim + Math.sin(phase) * 0.1 * sp - kick * 0.28);
+    ctx.translate(-r * 0.42 * kick, 0);
+    ctx.scale(B.arm, 1);
 
     // trailing off-hand swings opposite the walk cycle
     ctx.save();
