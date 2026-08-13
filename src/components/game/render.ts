@@ -28,6 +28,62 @@ function roundRect(
   ctx.roundRect(x, y, w, h, r);
 }
 
+/* ---------------- character animation ---------------- */
+
+/** Per-unit animation state derived from motion (presentation only). */
+type Anim = {
+  px: number;
+  py: number;
+  vx: number;
+  vy: number;
+  sp: number;
+  phase: number;
+  lean: number;
+  aim: number;
+  land: number;
+};
+
+const anims = new Map<number, Anim>();
+let animLastTime = 0;
+let animDt = 1 / 60;
+
+const lerpAngle = (a: number, b: number, t: number) => {
+  let d = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+  return a + d * t;
+};
+
+function tickAnim(id: number, x: number, y: number, aim: number, speedRef: number): Anim {
+  const dt = animDt;
+  let a = anims.get(id);
+  if (!a) {
+    a = { px: x, py: y, vx: 0, vy: 0, sp: 0, phase: Math.random() * 6.28, lean: 0, aim, land: 0 };
+    anims.set(id, a);
+  }
+  const ivx = dt > 0 ? (x - a.px) / dt : 0;
+  const ivy = dt > 0 ? (y - a.py) / dt : 0;
+  // smooth velocity so steps don't jitter on collisions
+  const k = Math.min(1, dt * 12);
+  a.vx += (ivx - a.vx) * k;
+  a.vy += (ivy - a.vy) * k;
+  a.px = x;
+  a.py = y;
+  const sp = Math.hypot(a.vx, a.vy);
+  a.sp = Math.min(1, sp / Math.max(60, speedRef));
+  // walk cycle speed follows actual pace; idle keeps a slow breathing cycle
+  a.phase += dt * (2.2 + a.sp * 12);
+  if (a.phase > Math.PI * 200) a.phase -= Math.PI * 200;
+  const targetLean = Math.max(-0.22, Math.min(0.22, (a.vx / Math.max(120, speedRef)) * 0.22));
+  a.lean += (targetLean - a.lean) * Math.min(1, dt * 8);
+  a.aim = lerpAngle(a.aim, aim, Math.min(1, dt * 14));
+  a.land = Math.max(0, a.land - dt * 3);
+  return a;
+}
+
+function pruneAnims(alive: Set<number>) {
+  if (anims.size < 64) return;
+  for (const id of anims.keys()) if (!alive.has(id)) anims.delete(id);
+}
+
 /* ---------------- floor ---------------- */
 
 let floorPattern: CanvasPattern | null = null;
@@ -298,7 +354,9 @@ const POWER_ICON: Record<PowerKind, { bg: string; glyph: string }> = {
 /* ---------------- main ---------------- */
 
 export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: number) {
-  const scale = Math.max(w / 620, h / 1000);
+  animDt = Math.max(0.0005, Math.min(0.05, g.time - animLastTime));
+  animLastTime = g.time;
+  const scale = Math.max(w / 500, h / 820);
   const halfW = w / 2 / scale;
   const halfH = h / 2 / scale;
   const camX = Math.min(Math.max(g.hero.pos.x, halfW), Math.max(halfW, ARENA_W - halfW));
@@ -407,9 +465,24 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     hat: string,
     boss = false,
     ring = 0,
-    bob = 0,
+    an?: Anim,
     skin?: Skin,
   ) => {
+    const sp = an?.sp ?? 0;
+    const phase = an?.phase ?? 0;
+    const lean = an?.lean ?? 0;
+    if (an) aim = an.aim;
+    // walk bounce + idle breathing
+    const bounce = -Math.abs(Math.sin(phase)) * r * 0.16 * sp;
+    const breathe = Math.sin(phase * 0.9) * r * 0.03 * (1 - sp);
+    const bob = bounce + breathe;
+    // squash & stretch around the feet
+    const sqy = 1 + Math.sin(phase * 2) * 0.06 * sp + Math.sin(phase * 0.9) * 0.012 * (1 - sp);
+    const sqx = 1 / sqy;
+    // ground-plane movement direction for foot placement
+    const mvLen = Math.hypot(an?.vx ?? 0, an?.vy ?? 0) || 1;
+    const dirX = (an?.vx ?? 0) / mvLen;
+    const dirY = (an?.vy ?? 0) / mvLen;
     if (ring > 0) {
       ctx.strokeStyle = `rgba(255,255,255,${0.25 * ring})`;
       ctx.lineWidth = 3;
@@ -433,9 +506,20 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     }
 
     ctx.fillStyle = "rgba(0,0,0,0.34)";
+    ctx.save();
+    ctx.globalAlpha = 1 - Math.abs(bounce) / (r * 0.4);
     ctx.beginPath();
-    ctx.ellipse(x, y + r * 0.9, r * 0.95, r * 0.38, 0, 0, Math.PI * 2);
+    ctx.ellipse(
+      x,
+      y + r * 0.9,
+      r * 0.95 * (1 - Math.abs(bounce) / (r * 1.6)),
+      r * 0.38 * (1 - Math.abs(bounce) / (r * 1.6)),
+      0,
+      0,
+      Math.PI * 2,
+    );
     ctx.fill();
+    ctx.restore();
 
     const by = y + bob;
     const face = Math.cos(aim) >= 0 ? 1 : -1;
@@ -448,26 +532,40 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     };
     const body = flash > 0.05 ? "#ffffff" : base;
 
+    // feet stay on the ground, body above leans & squashes
+    for (const s of [-1, 1]) {
+      const ph = phase + (s > 0 ? 0 : Math.PI);
+      const step = Math.cos(ph) * sp;
+      const lift = Math.max(0, Math.sin(ph)) * sp;
+      const fx = x + s * r * 0.42 * (1 - sp * 0.35) + dirX * step * r * 0.5;
+      const fy = y + r * 0.86 + dirY * step * r * 0.22 - lift * r * 0.3;
+      ctx.save();
+      ctx.fillStyle = "rgba(20,12,26,0.85)";
+      ctx.beginPath();
+      ctx.ellipse(fx, fy, r * 0.3, r * 0.19 * (1 + lift * 0.3), lean * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // everything above the feet pivots and squashes with the walk cycle
+    ctx.save();
+    ctx.translate(x, y + r * 0.85);
+    ctx.rotate(lean);
+    ctx.scale(sqx, sqy);
+    ctx.translate(-x, -(y + r * 0.85));
+
     // cape behind body
     if (skin?.cape) {
       ctx.save();
       ctx.fillStyle = color(skin.cape);
       ctx.beginPath();
-      const swing = Math.sin(performance.now() / 220) * r * 0.12;
+      const swing = Math.sin(phase * 1.1) * r * (0.12 + sp * 0.3) - dirX * sp * r * 0.5;
       ctx.moveTo(x - r * 0.55, by - r * 0.15);
-      ctx.quadraticCurveTo(x + swing, by + r * 1.35, x + r * 0.55, by - r * 0.15);
+      ctx.quadraticCurveTo(x + swing, by + r * (1.35 - sp * 0.35), x + r * 0.55, by - r * 0.15);
       ctx.closePath();
       ctx.fill();
       outline(r * 0.12);
       ctx.restore();
-    }
-
-    // feet
-    ctx.fillStyle = "rgba(20,12,26,0.85)";
-    for (const s of [-1, 1]) {
-      ctx.beginPath();
-      ctx.ellipse(x + s * r * 0.42, by + r * 0.82, r * 0.3, r * 0.19, 0, 0, Math.PI * 2);
-      ctx.fill();
     }
 
     // torso
@@ -487,7 +585,18 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     // arm + weapon
     ctx.save();
     ctx.translate(x, by + r * 0.3);
-    ctx.rotate(aim);
+    ctx.rotate(aim + Math.sin(phase) * 0.1 * sp);
+
+    // trailing off-hand swings opposite the walk cycle
+    ctx.save();
+    ctx.rotate(Math.PI * 0.75 - Math.sin(phase) * 0.5 * sp);
+    ctx.beginPath();
+    ctx.arc(r * 0.72, 0, r * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = body;
+    ctx.fill();
+    outline(r * 0.12);
+    ctx.restore();
+
     ctx.beginPath();
     ctx.roundRect(r * 0.25, -r * 0.28, r * 1.25, r * 0.56, r * 0.2);
     ctx.fillStyle = "#2b2233";
@@ -512,16 +621,25 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
 
     // head
     const hr = r * 0.78;
-    const hy = by - r * 0.42;
+    const hy = by - r * 0.42 + Math.sin(phase * 2 + 0.6) * r * 0.03 * sp;
     const hg = ctx.createRadialGradient(x - hr * 0.4, hy - hr * 0.5, hr * 0.15, x, hy, hr * 1.2);
-    hg.addColorStop(0, "rgba(255,255,255,0.55)");
-    hg.addColorStop(0.5, body);
-    hg.addColorStop(1, "rgba(0,0,0,0.3)");
+    hg.addColorStop(0, "rgba(255,255,255,0.32)");
+    hg.addColorStop(0.32, body);
+    hg.addColorStop(1, "rgba(0,0,0,0.22)");
     ctx.beginPath();
     ctx.ellipse(x, hy, hr * 1.05, hr, 0, 0, Math.PI * 2);
     ctx.fillStyle = flash > 0.05 ? "#ffffff" : hg;
     ctx.fill();
     outline(r * 0.17);
+
+    // rim light from the upper left keeps silhouettes readable
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.28)";
+    ctx.lineWidth = r * 0.07;
+    ctx.beginPath();
+    ctx.ellipse(x, hy, hr * 1.02, hr * 0.97, 0, Math.PI * 1.05, Math.PI * 1.6);
+    ctx.stroke();
+    ctx.restore();
 
     ctx.save();
     ctx.beginPath();
@@ -662,9 +780,11 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       outline(r * 0.1);
     }
 
+    ctx.restore(); // end body transform
+
     // hp bar
     const bw = r * 2.4;
-    const barY = by - r * 1.35 - 26;
+    const barY = y + bob * 0.4 - r * 1.35 - 26;
     ctx.fillStyle = "rgba(0,0,0,0.65)";
     roundRect(ctx, x - bw / 2 - 2, barY - 2, bw + 4, 15, 8);
     ctx.fill();
@@ -676,7 +796,9 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     ctx.fill();
   };
 
-  for (const e of g.enemies)
+  const alive = new Set<number>([g.hero.id]);
+  for (const e of g.enemies) {
+    alive.add(e.id);
     drawUnit(
       e.pos.x,
       e.pos.y,
@@ -689,8 +811,10 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       e.enemyKind === "brute" ? "helmet" : e.enemyKind === "runner" ? "horns" : "cap",
       e.enemyKind === "boss",
       e.ringTimer,
-      Math.sin(g.time * 7 + e.id) * (e.enemyKind === "boss" ? 2 : 3),
+      tickAnim(e.id, e.pos.x, e.pos.y, e.aim, e.speed),
     );
+  }
+  pruneAnims(alive);
 
   if (!g.over) {
     const h0 = g.hero;
@@ -719,7 +843,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       g.brawler.hat,
       false,
       0,
-      Math.sin(g.time * 8) * 3,
+      tickAnim(h0.id, h0.pos.x, h0.pos.y, h0.aim, h0.speed),
       g.skin,
     );
     drawSkinFx(ctx, g, h0.pos.x, h0.pos.y, h0.radius);
