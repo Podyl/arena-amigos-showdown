@@ -893,7 +893,15 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       e.enemyKind === "brute" ? "helmet" : e.enemyKind === "runner" ? "horns" : "cap",
       e.enemyKind === "boss",
       e.ringTimer,
-      tickAnim(e.id, e.pos.x, e.pos.y, e.aim, e.speed),
+      tickAnim(e.id, e.pos.x, e.pos.y, e.aim, e.speed, e.cooldown, e.hitFlash),
+      undefined,
+      e.enemyKind === "brute"
+        ? "tank"
+        : e.enemyKind === "runner"
+          ? "nimble"
+          : e.enemyKind === "boss"
+            ? "tank"
+            : "lanky",
     );
   }
   pruneAnims(alive);
@@ -925,8 +933,9 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       g.brawler.hat,
       false,
       0,
-      tickAnim(h0.id, h0.pos.x, h0.pos.y, h0.aim, h0.speed),
+      tickAnim(h0.id, h0.pos.x, h0.pos.y, h0.aim, h0.speed, h0.cooldown, h0.hitFlash),
       g.skin,
+      g.brawler.build,
     );
     drawSkinFx(ctx, g, h0.pos.x, h0.pos.y, h0.radius);
   }
