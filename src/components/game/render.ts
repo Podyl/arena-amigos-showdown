@@ -623,8 +623,8 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     const hr = r * 0.78;
     const hy = by - r * 0.42 + Math.sin(phase * 2 + 0.6) * r * 0.03 * sp;
     const hg = ctx.createRadialGradient(x - hr * 0.4, hy - hr * 0.5, hr * 0.15, x, hy, hr * 1.2);
-    hg.addColorStop(0, "rgba(255,255,255,0.55)");
-    hg.addColorStop(0.5, body);
+    hg.addColorStop(0, "rgba(255,255,255,0.32)");
+    hg.addColorStop(0.32, body);
     hg.addColorStop(1, "rgba(0,0,0,0.22)");
     ctx.beginPath();
     ctx.ellipse(x, hy, hr * 1.05, hr, 0, 0, Math.PI * 2);
@@ -634,8 +634,8 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
 
     // rim light from the upper left keeps silhouettes readable
     ctx.save();
-    ctx.strokeStyle = "rgba(255,255,255,0.35)";
-    ctx.lineWidth = r * 0.09;
+    ctx.strokeStyle = "rgba(255,255,255,0.28)";
+    ctx.lineWidth = r * 0.07;
     ctx.beginPath();
     ctx.ellipse(x, hy, hr * 1.02, hr * 0.97, 0, Math.PI * 1.05, Math.PI * 1.6);
     ctx.stroke();
