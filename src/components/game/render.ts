@@ -356,7 +356,7 @@ const POWER_ICON: Record<PowerKind, { bg: string; glyph: string }> = {
 export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: number) {
   animDt = Math.max(0.0005, Math.min(0.05, g.time - animLastTime));
   animLastTime = g.time;
-  const scale = Math.max(w / 620, h / 1000);
+  const scale = Math.max(w / 500, h / 820);
   const halfW = w / 2 / scale;
   const halfH = h / 2 / scale;
   const camX = Math.min(Math.max(g.hero.pos.x, halfW), Math.max(halfW, ARENA_W - halfW));
@@ -625,12 +625,21 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     const hg = ctx.createRadialGradient(x - hr * 0.4, hy - hr * 0.5, hr * 0.15, x, hy, hr * 1.2);
     hg.addColorStop(0, "rgba(255,255,255,0.55)");
     hg.addColorStop(0.5, body);
-    hg.addColorStop(1, "rgba(0,0,0,0.3)");
+    hg.addColorStop(1, "rgba(0,0,0,0.22)");
     ctx.beginPath();
     ctx.ellipse(x, hy, hr * 1.05, hr, 0, 0, Math.PI * 2);
     ctx.fillStyle = flash > 0.05 ? "#ffffff" : hg;
     ctx.fill();
     outline(r * 0.17);
+
+    // rim light from the upper left keeps silhouettes readable
+    ctx.save();
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = r * 0.09;
+    ctx.beginPath();
+    ctx.ellipse(x, hy, hr * 1.02, hr * 0.97, 0, Math.PI * 1.05, Math.PI * 1.6);
+    ctx.stroke();
+    ctx.restore();
 
     ctx.save();
     ctx.beginPath();
