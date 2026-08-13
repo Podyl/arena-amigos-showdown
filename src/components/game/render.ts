@@ -465,9 +465,24 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     hat: string,
     boss = false,
     ring = 0,
-    bob = 0,
+    an?: Anim,
     skin?: Skin,
   ) => {
+    const sp = an?.sp ?? 0;
+    const phase = an?.phase ?? 0;
+    const lean = an?.lean ?? 0;
+    if (an) aim = an.aim;
+    // walk bounce + idle breathing
+    const bounce = -Math.abs(Math.sin(phase)) * r * 0.16 * sp;
+    const breathe = Math.sin(phase * 0.9) * r * 0.03 * (1 - sp);
+    const bob = bounce + breathe;
+    // squash & stretch around the feet
+    const sqy = 1 + Math.sin(phase * 2) * 0.06 * sp + Math.sin(phase * 0.9) * 0.012 * (1 - sp);
+    const sqx = 1 / sqy;
+    // ground-plane movement direction for foot placement
+    const mvLen = Math.hypot(an?.vx ?? 0, an?.vy ?? 0) || 1;
+    const dirX = (an?.vx ?? 0) / mvLen;
+    const dirY = (an?.vy ?? 0) / mvLen;
     if (ring > 0) {
       ctx.strokeStyle = `rgba(255,255,255,${0.25 * ring})`;
       ctx.lineWidth = 3;
@@ -491,9 +506,20 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     }
 
     ctx.fillStyle = "rgba(0,0,0,0.34)";
+    ctx.save();
+    ctx.globalAlpha = 1 - Math.abs(bounce) / (r * 0.4);
     ctx.beginPath();
-    ctx.ellipse(x, y + r * 0.9, r * 0.95, r * 0.38, 0, 0, Math.PI * 2);
+    ctx.ellipse(
+      x,
+      y + r * 0.9,
+      r * 0.95 * (1 - Math.abs(bounce) / (r * 1.6)),
+      r * 0.38 * (1 - Math.abs(bounce) / (r * 1.6)),
+      0,
+      0,
+      Math.PI * 2,
+    );
     ctx.fill();
+    ctx.restore();
 
     const by = y + bob;
     const face = Math.cos(aim) >= 0 ? 1 : -1;
@@ -506,26 +532,40 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     };
     const body = flash > 0.05 ? "#ffffff" : base;
 
+    // feet stay on the ground, body above leans & squashes
+    for (const s of [-1, 1]) {
+      const ph = phase + (s > 0 ? 0 : Math.PI);
+      const step = Math.cos(ph) * sp;
+      const lift = Math.max(0, Math.sin(ph)) * sp;
+      const fx = x + s * r * 0.42 * (1 - sp * 0.35) + dirX * step * r * 0.5;
+      const fy = y + r * 0.86 + dirY * step * r * 0.22 - lift * r * 0.3;
+      ctx.save();
+      ctx.fillStyle = "rgba(20,12,26,0.85)";
+      ctx.beginPath();
+      ctx.ellipse(fx, fy, r * 0.3, r * 0.19 * (1 + lift * 0.3), lean * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // everything above the feet pivots and squashes with the walk cycle
+    ctx.save();
+    ctx.translate(x, y + r * 0.85);
+    ctx.rotate(lean);
+    ctx.scale(sqx, sqy);
+    ctx.translate(-x, -(y + r * 0.85));
+
     // cape behind body
     if (skin?.cape) {
       ctx.save();
       ctx.fillStyle = color(skin.cape);
       ctx.beginPath();
-      const swing = Math.sin(performance.now() / 220) * r * 0.12;
+      const swing = Math.sin(phase * 1.1) * r * (0.12 + sp * 0.3) - dirX * sp * r * 0.5;
       ctx.moveTo(x - r * 0.55, by - r * 0.15);
-      ctx.quadraticCurveTo(x + swing, by + r * 1.35, x + r * 0.55, by - r * 0.15);
+      ctx.quadraticCurveTo(x + swing, by + r * (1.35 - sp * 0.35), x + r * 0.55, by - r * 0.15);
       ctx.closePath();
       ctx.fill();
       outline(r * 0.12);
       ctx.restore();
-    }
-
-    // feet
-    ctx.fillStyle = "rgba(20,12,26,0.85)";
-    for (const s of [-1, 1]) {
-      ctx.beginPath();
-      ctx.ellipse(x + s * r * 0.42, by + r * 0.82, r * 0.3, r * 0.19, 0, 0, Math.PI * 2);
-      ctx.fill();
     }
 
     // torso
@@ -545,7 +585,18 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     // arm + weapon
     ctx.save();
     ctx.translate(x, by + r * 0.3);
-    ctx.rotate(aim);
+    ctx.rotate(aim + Math.sin(phase) * 0.1 * sp);
+
+    // trailing off-hand swings opposite the walk cycle
+    ctx.save();
+    ctx.rotate(Math.PI * 0.75 - Math.sin(phase) * 0.5 * sp);
+    ctx.beginPath();
+    ctx.arc(r * 0.72, 0, r * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = body;
+    ctx.fill();
+    outline(r * 0.12);
+    ctx.restore();
+
     ctx.beginPath();
     ctx.roundRect(r * 0.25, -r * 0.28, r * 1.25, r * 0.56, r * 0.2);
     ctx.fillStyle = "#2b2233";
@@ -570,7 +621,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
 
     // head
     const hr = r * 0.78;
-    const hy = by - r * 0.42;
+    const hy = by - r * 0.42 + Math.sin(phase * 2 + 0.6) * r * 0.03 * sp;
     const hg = ctx.createRadialGradient(x - hr * 0.4, hy - hr * 0.5, hr * 0.15, x, hy, hr * 1.2);
     hg.addColorStop(0, "rgba(255,255,255,0.55)");
     hg.addColorStop(0.5, body);
