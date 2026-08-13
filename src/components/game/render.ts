@@ -771,9 +771,11 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       outline(r * 0.1);
     }
 
+    ctx.restore(); // end body transform
+
     // hp bar
     const bw = r * 2.4;
-    const barY = by - r * 1.35 - 26;
+    const barY = y + bob * 0.4 - r * 1.35 - 26;
     ctx.fillStyle = "rgba(0,0,0,0.65)";
     roundRect(ctx, x - bw / 2 - 2, barY - 2, bw + 4, 15, 8);
     ctx.fill();
@@ -785,7 +787,9 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     ctx.fill();
   };
 
-  for (const e of g.enemies)
+  const alive = new Set<number>([g.hero.id]);
+  for (const e of g.enemies) {
+    alive.add(e.id);
     drawUnit(
       e.pos.x,
       e.pos.y,
@@ -798,8 +802,10 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       e.enemyKind === "brute" ? "helmet" : e.enemyKind === "runner" ? "horns" : "cap",
       e.enemyKind === "boss",
       e.ringTimer,
-      Math.sin(g.time * 7 + e.id) * (e.enemyKind === "boss" ? 2 : 3),
+      tickAnim(e.id, e.pos.x, e.pos.y, e.aim, e.speed),
     );
+  }
+  pruneAnims(alive);
 
   if (!g.over) {
     const h0 = g.hero;
@@ -828,7 +834,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       g.brawler.hat,
       false,
       0,
-      Math.sin(g.time * 8) * 3,
+      tickAnim(h0.id, h0.pos.x, h0.pos.y, h0.aim, h0.speed),
       g.skin,
     );
     drawSkinFx(ctx, g, h0.pos.x, h0.pos.y, h0.radius);
