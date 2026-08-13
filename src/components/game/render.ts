@@ -354,6 +354,8 @@ const POWER_ICON: Record<PowerKind, { bg: string; glyph: string }> = {
 /* ---------------- main ---------------- */
 
 export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: number) {
+  animDt = Math.max(0.0005, Math.min(0.05, g.time - animLastTime));
+  animLastTime = g.time;
   const scale = Math.max(w / 620, h / 1000);
   const halfW = w / 2 / scale;
   const halfH = h / 2 / scale;
