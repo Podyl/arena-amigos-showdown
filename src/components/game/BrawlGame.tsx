@@ -349,7 +349,16 @@ export function BrawlGame() {
                 <span
                   className="mb-2 block size-12 rounded-full border-4 border-black/30"
                   style={{ background: b.color }}
-                />
+                >
+                  <img
+                    src={brawlerArt(b.id)}
+                    alt={b.name}
+                    loading="lazy"
+                    width={96}
+                    height={96}
+                    className="size-full scale-150 object-contain object-bottom drop-shadow-lg"
+                  />
+                </span>
                 <p className="text-base font-black text-foreground">{b.name}</p>
                 <p className="text-[11px] leading-tight text-muted-foreground">{b.tagline}</p>
                 <p className="mt-2 text-[10px] font-bold tracking-widest text-accent uppercase">
