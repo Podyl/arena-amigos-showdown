@@ -931,6 +931,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
           : e.enemyKind === "boss"
             ? "tank"
             : "lanky",
+      sprite(enemySpriteKey(e.enemyKind)),
     );
   }
   pruneAnims(alive);
@@ -965,6 +966,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       tickAnim(h0.id, h0.pos.x, h0.pos.y, h0.aim, h0.speed, h0.cooldown, h0.hitFlash),
       g.skin,
       g.brawler.build,
+      sprite(g.brawler.id),
     );
     drawSkinFx(ctx, g, h0.pos.x, h0.pos.y, h0.radius);
   }
