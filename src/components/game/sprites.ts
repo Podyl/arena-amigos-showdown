@@ -36,3 +36,6 @@ export function preloadSprites() {
 
 /** Enemy kind -> sprite key. Non-boss enemies all share the grunt art. */
 export const enemySpriteKey = (kind: string) => (kind === "boss" ? "boss" : "grunt");
+
+/** Raw image URL for menu portraits. */
+export const brawlerArt = (id: string) => SRC[id] ?? SRC["blaze"]!;
