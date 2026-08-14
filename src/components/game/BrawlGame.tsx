@@ -66,6 +66,10 @@ export function BrawlGame() {
   }, [phase]);
 
   useEffect(() => {
+    preloadSprites();
+  }, []);
+
+  useEffect(() => {
     const p = loadProfile();
     profileRef.current = p;
     setProfile(p);
