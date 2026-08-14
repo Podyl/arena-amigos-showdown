@@ -649,6 +649,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     }
 
     // everything above the feet pivots and squashes with the walk cycle
+    if (!art) {
     ctx.save();
     ctx.translate(x + pushX + jx, y + r * 0.85 + pushY + jy);
     ctx.rotate(lean + flinch * 0.16 * (Math.cos(flinchAng) >= 0 ? -1 : 1));
@@ -890,6 +891,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     }
 
     ctx.restore(); // end body transform
+    }
 
     // hp bar
     const bw = r * 2.4;
