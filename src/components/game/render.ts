@@ -1,6 +1,7 @@
 import { ARENA_H, ARENA_W, WALLS, type GameState, type PowerKind } from "./engine";
 import { DECOR, TORCHES } from "./decor";
 import type { Skin } from "./skins";
+import { enemySpriteKey, sprite } from "./sprites";
 
 const cache = new Map<string, string>();
 export function cssVar(name: string) {
@@ -524,6 +525,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     an?: Anim,
     skin?: Skin,
     build: BuildKind = "bulky",
+    art?: HTMLImageElement | null,
   ) => {
     const B = BUILDS[build];
     const fire = an?.fire ?? 0;
