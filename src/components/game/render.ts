@@ -608,8 +608,33 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     };
     const body = flash > 0.05 ? "#ffffff" : base;
 
+    // pre-rendered art path: animate the sprite instead of drawing a vector body
+    if (art) {
+      const h2 = r * 3.5;
+      const w2 = h2 * (art.naturalWidth / art.naturalHeight);
+      const feetY = y + r * 0.98;
+      ctx.save();
+      ctx.translate(x + pushX + jx, feetY + pushY + jy);
+      ctx.rotate(lean * 0.9 + flinch * 0.14 * (Math.cos(flinchAng) >= 0 ? -1 : 1));
+      ctx.scale(face * sqx, sqy);
+      ctx.translate(0, bob);
+      if (skin?.aura) {
+        ctx.shadowColor = color(skin.aura);
+        ctx.shadowBlur = r * 0.9;
+      }
+      ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
+      ctx.shadowBlur = 0;
+      if (flash > 0.05) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = Math.min(0.85, flash * 1.4);
+        ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
+        ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
+      }
+      ctx.restore();
+    }
+
     // feet stay on the ground, body above leans & squashes
-    for (const s of [-1, 1]) {
+    for (const s of art ? [] : [-1, 1]) {
       const ph = phase + (s > 0 ? 0 : Math.PI);
       const step = Math.cos(ph) * sp;
       const lift = Math.max(0, Math.sin(ph)) * sp;
