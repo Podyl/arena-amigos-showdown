@@ -1,6 +1,7 @@
 import { ARENA_H, ARENA_W, WALLS, type GameState, type PowerKind } from "./engine";
 import { DECOR, TORCHES } from "./decor";
 import type { Skin } from "./skins";
+import { enemySpriteKey, sprite } from "./sprites";
 
 const cache = new Map<string, string>();
 export function cssVar(name: string) {
@@ -524,6 +525,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     an?: Anim,
     skin?: Skin,
     build: BuildKind = "bulky",
+    art?: HTMLImageElement | null,
   ) => {
     const B = BUILDS[build];
     const fire = an?.fire ?? 0;
@@ -606,8 +608,33 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     };
     const body = flash > 0.05 ? "#ffffff" : base;
 
+    // pre-rendered art path: animate the sprite instead of drawing a vector body
+    if (art) {
+      const h2 = r * 3.5;
+      const w2 = h2 * (art.naturalWidth / art.naturalHeight);
+      const feetY = y + r * 0.98;
+      ctx.save();
+      ctx.translate(x + pushX + jx, feetY + pushY + jy);
+      ctx.rotate(lean * 0.9 + flinch * 0.14 * (Math.cos(flinchAng) >= 0 ? -1 : 1));
+      ctx.scale(face * sqx, sqy);
+      ctx.translate(0, bob);
+      if (skin?.aura) {
+        ctx.shadowColor = color(skin.aura);
+        ctx.shadowBlur = r * 0.9;
+      }
+      ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
+      ctx.shadowBlur = 0;
+      if (flash > 0.05) {
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = Math.min(0.85, flash * 1.4);
+        ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
+        ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
+      }
+      ctx.restore();
+    }
+
     // feet stay on the ground, body above leans & squashes
-    for (const s of [-1, 1]) {
+    for (const s of art ? [] : [-1, 1]) {
       const ph = phase + (s > 0 ? 0 : Math.PI);
       const step = Math.cos(ph) * sp;
       const lift = Math.max(0, Math.sin(ph)) * sp;
@@ -622,6 +649,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     }
 
     // everything above the feet pivots and squashes with the walk cycle
+    if (!art) {
     ctx.save();
     ctx.translate(x + pushX + jx, y + r * 0.85 + pushY + jy);
     ctx.rotate(lean + flinch * 0.16 * (Math.cos(flinchAng) >= 0 ? -1 : 1));
@@ -863,6 +891,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     }
 
     ctx.restore(); // end body transform
+    }
 
     // hp bar
     const bw = r * 2.4;
@@ -902,6 +931,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
           : e.enemyKind === "boss"
             ? "tank"
             : "lanky",
+      sprite(enemySpriteKey(e.enemyKind)),
     );
   }
   pruneAnims(alive);
@@ -936,6 +966,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       tickAnim(h0.id, h0.pos.x, h0.pos.y, h0.aim, h0.speed, h0.cooldown, h0.hitFlash),
       g.skin,
       g.brawler.build,
+      sprite(g.brawler.id),
     );
     drawSkinFx(ctx, g, h0.pos.x, h0.pos.y, h0.radius);
   }
