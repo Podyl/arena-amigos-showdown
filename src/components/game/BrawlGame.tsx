@@ -3,6 +3,7 @@ import { createGame, step, type GameState, type Input } from "./engine";
 import { draw } from "./render";
 import { Joystick } from "./Joystick";
 import { BRAWLERS } from "./characters";
+import { brawlerArt, preloadSprites } from "./sprites";
 import { isMuted, setMuted, unlockAudio } from "./audio";
 import { activeSynergies, SYNERGIES } from "./synergy";
 import {
