@@ -96,23 +96,37 @@ function tickAnim(
       aim,
       land: 0,
       fire: 0,
+      atk: 0,
+      muzzle: 0,
       hit: 0,
+      spark: 0,
       hitAng: aim,
+      idle: Math.random() * 6.28,
+      dust: 0,
+      psp: 0,
       pcd: cd,
       pflash: flash,
     };
     anims.set(id, a);
   }
   // a cooldown that jumped up means a shot just left the barrel
-  if (cd > a.pcd + 0.02) a.fire = 1;
+  if (cd > a.pcd + 0.02) {
+    a.fire = 1;
+    a.atk = 1;
+    a.muzzle = 1;
+  }
   a.pcd = cd;
   if (flash > a.pflash + 0.05) {
     a.hit = 1;
+    a.spark = 1;
     a.hitAng = aim;
   }
   a.pflash = flash;
   a.fire = Math.max(0, a.fire - dt * 5.5);
+  a.atk = Math.max(0, a.atk - dt * 3.4);
+  a.muzzle = Math.max(0, a.muzzle - dt * 9);
   a.hit = Math.max(0, a.hit - dt * 4.5);
+  a.spark = Math.max(0, a.spark - dt * 6);
   const ivx = dt > 0 ? (x - a.px) / dt : 0;
   const ivy = dt > 0 ? (y - a.py) / dt : 0;
   // smooth velocity so steps don't jitter on collisions
@@ -123,15 +137,22 @@ function tickAnim(
   a.py = y;
   const sp = Math.hypot(a.vx, a.vy);
   a.sp = Math.min(1, sp / Math.max(60, speedRef));
+  // accel/decel kicks up a dust puff at the feet
+  if (Math.abs(a.sp - a.psp) > 0.22) a.dust = 1;
+  a.psp = a.sp;
+  a.dust = Math.max(0, a.dust - dt * 2.6);
   // walk cycle speed follows actual pace; idle keeps a slow breathing cycle
   a.phase += dt * (2.2 + a.sp * 12);
   if (a.phase > Math.PI * 200) a.phase -= Math.PI * 200;
+  a.idle += dt * 1.35;
+  if (a.idle > Math.PI * 200) a.idle -= Math.PI * 200;
   const targetLean = Math.max(-0.22, Math.min(0.22, (a.vx / Math.max(120, speedRef)) * 0.22));
   a.lean += (targetLean - a.lean) * Math.min(1, dt * 8);
   a.aim = lerpAngle(a.aim, aim, Math.min(1, dt * 14));
   a.land = Math.max(0, a.land - dt * 3);
   return a;
 }
+
 
 function pruneAnims(alive: Set<number>) {
   if (anims.size < 64) return;
