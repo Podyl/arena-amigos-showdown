@@ -562,30 +562,44 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
   ) => {
     const B = BUILDS[build];
     const fire = an?.fire ?? 0;
+    const atkT = an?.atk ?? 0;
+    // attack timeline: wind-up (atk 1 -> 0.78), strike, then eased recovery
+    const anticip = atkT > 0.78 ? Math.sin(((1 - atkT) / 0.22) * Math.PI) : 0;
+    const strike = atkT <= 0.78 && atkT > 0 ? Math.pow(atkT / 0.78, 1.5) : 0;
     // anticipation on the way up, snap-back recoil on the way down
-    const kick = Math.sin(Math.min(1, fire) * Math.PI) * (fire > 0.75 ? -0.35 : 1);
+    const kick = an ? strike - anticip * 0.55 : Math.sin(Math.min(1, fire) * Math.PI);
+    const muzzle = an?.muzzle ?? 0;
     const flinch = an?.hit ?? 0;
+    const spark = an?.spark ?? 0;
     const flinchAng = an?.hitAng ?? 0;
     const sp = an?.sp ?? 0;
     const phase = an?.phase ?? 0;
+    const idleP = an?.idle ?? 0;
+    const dust = an?.dust ?? 0;
     const lean = an?.lean ?? 0;
     if (an) aim = an.aim;
-    // walk bounce + idle breathing
+    // walk bounce + layered idle breathing (chest rise + slow settle)
     const bounce = -Math.abs(Math.sin(phase)) * r * 0.16 * sp;
-    const breathe = Math.sin(phase * 0.9) * r * 0.03 * (1 - sp);
+    const breathe =
+      (Math.sin(idleP) * r * 0.045 + Math.sin(idleP * 2.1) * r * 0.012) * (1 - sp) -
+      r * 0.05 * strike;
     const bob = bounce + breathe;
+    // idle weight-shift keeps the pose alive when standing still
+    const sway = Math.sin(idleP * 0.7) * 0.035 * (1 - sp);
     // squash & stretch around the feet
     const sqy =
       1 +
       Math.sin(phase * 2) * 0.06 * sp +
-      Math.sin(phase * 0.9) * 0.012 * (1 - sp) -
-      kick * 0.09 +
-      flinch * 0.1;
+      Math.sin(idleP) * 0.02 * (1 - sp) -
+      kick * 0.11 +
+      anticip * 0.06 +
+      flinch * 0.12;
     const sqx = 1 / sqy;
     // ground-plane movement direction for foot placement
     const mvLen = Math.hypot(an?.vx ?? 0, an?.vy ?? 0) || 1;
     const dirX = (an?.vx ?? 0) / mvLen;
     const dirY = (an?.vy ?? 0) / mvLen;
+
     if (ring > 0) {
       ctx.strokeStyle = `rgba(255,255,255,${0.25 * ring})`;
       ctx.lineWidth = 3;
