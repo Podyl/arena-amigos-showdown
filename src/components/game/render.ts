@@ -44,13 +44,25 @@ type Anim = {
   land: number;
   /** shot recoil 1 -> 0 */
   fire: number;
+  /** attack pose timeline 1 -> 0 (anticipation -> strike -> recovery) */
+  atk: number;
+  /** muzzle flash intensity 1 -> 0, synced to the attack strike */
+  muzzle: number;
   /** hit flinch 1 -> 0 */
   hit: number;
+  /** impact spark intensity 1 -> 0 */
+  spark: number;
   /** direction the unit was facing when hit */
   hitAng: number;
+  /** slow idle sway phase, independent of the walk cycle */
+  idle: number;
+  /** dust puff when the unit starts/stops moving */
+  dust: number;
+  psp: number;
   pcd: number;
   pflash: number;
 };
+
 
 const anims = new Map<number, Anim>();
 let animLastTime = 0;
