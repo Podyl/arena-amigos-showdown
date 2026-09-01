@@ -622,15 +622,25 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       ctx.restore();
     }
 
-    ctx.fillStyle = "rgba(0,0,0,0.34)";
+    // layered ground shadow: soft ambient occlusion + tight contact shadow
+    const air = Math.abs(bounce) / (r * 1.6);
     ctx.save();
-    ctx.globalAlpha = 1 - Math.abs(bounce) / (r * 0.4);
+    const sg = ctx.createRadialGradient(x, y + r * 0.92, r * 0.1, x, y + r * 0.92, r * 1.5);
+    sg.addColorStop(0, "rgba(0,0,0,0.4)");
+    sg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.globalAlpha = 0.75 - air * 0.5;
+    ctx.fillStyle = sg;
+    ctx.beginPath();
+    ctx.ellipse(x, y + r * 0.92, r * 1.5, r * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = (1 - air) * 0.85;
+    ctx.fillStyle = "rgba(8,4,14,0.5)";
     ctx.beginPath();
     ctx.ellipse(
-      x,
-      y + r * 0.9,
-      r * 0.95 * (1 - Math.abs(bounce) / (r * 1.6)),
-      r * 0.38 * (1 - Math.abs(bounce) / (r * 1.6)),
+      x + Math.sin(idleP * 0.7) * r * 0.03,
+      y + r * 0.92,
+      r * 0.82 * (1 - air),
+      r * 0.3 * (1 - air),
       0,
       0,
       Math.PI * 2,
@@ -638,9 +648,30 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     ctx.fill();
     ctx.restore();
 
-    const pushX = -Math.cos(aim) * r * 0.16 * kick - Math.cos(flinchAng) * r * 0.2 * flinch;
-    const pushY = -Math.sin(aim) * r * 0.12 * kick - Math.sin(flinchAng) * r * 0.14 * flinch;
-    const shake = flinch * flinch * r * 0.1;
+    // dust puff on accel/decel and on each footfall
+    if (dust > 0.02 || (sp > 0.35 && Math.sin(phase * 2) > 0.9)) {
+      ctx.save();
+      ctx.globalAlpha = 0.18 * Math.max(dust, sp * 0.5);
+      ctx.fillStyle = "rgba(240,230,210,0.9)";
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(
+          x + s * r * (0.5 + (1 - dust) * 0.6),
+          y + r * 0.95,
+          r * (0.24 + (1 - dust) * 0.3),
+          r * 0.12,
+          0,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    const pushX = -Math.cos(aim) * r * 0.2 * kick - Math.cos(flinchAng) * r * 0.24 * flinch;
+    const pushY = -Math.sin(aim) * r * 0.15 * kick - Math.sin(flinchAng) * r * 0.17 * flinch;
+    const shake = flinch * flinch * r * 0.14;
     const jx = (Math.random() - 0.5) * shake;
     const jy = (Math.random() - 0.5) * shake;
     const bx = x;
@@ -660,9 +691,14 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       const h2 = r * 3.5;
       const w2 = h2 * (art.naturalWidth / art.naturalHeight);
       const feetY = y + r * 0.98;
+      const tilt =
+        lean * 0.9 +
+        sway +
+        (anticip * -0.1 + strike * 0.16) * face +
+        flinch * 0.2 * (Math.cos(flinchAng) >= 0 ? -1 : 1);
       ctx.save();
       ctx.translate(x + pushX + jx, feetY + pushY + jy);
-      ctx.rotate(lean * 0.9 + flinch * 0.14 * (Math.cos(flinchAng) >= 0 ? -1 : 1));
+      ctx.rotate(tilt);
       ctx.scale(face * sqx, sqy);
       ctx.translate(0, bob);
       if (skin?.aura) {
@@ -671,14 +707,71 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       }
       ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
       ctx.shadowBlur = 0;
+      // key light from upper left: a lightened offset copy reads as a rim
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = 0.16;
+      ctx.drawImage(art, -w2 / 2 - w2 * 0.035, -h2 - h2 * 0.02, w2, h2);
+      // muzzle bloom lights the whole body for a frame or two
+      if (muzzle > 0.02) {
+        ctx.globalAlpha = Math.min(0.5, muzzle * 0.5);
+        ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
+      }
       if (flash > 0.05) {
-        ctx.globalCompositeOperation = "lighter";
         ctx.globalAlpha = Math.min(0.85, flash * 1.4);
         ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
         ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
       }
       ctx.restore();
+
+      // VFX synced to the attack strike: muzzle flare at the barrel
+      if (muzzle > 0.02) {
+        const mx = x + Math.cos(aim) * r * 1.15;
+        const my = y - r * 0.35 + Math.sin(aim) * r * 1.15 + bob;
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.translate(mx, my);
+        ctx.rotate(aim);
+        const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.5 * muzzle);
+        const mc = skin ? color(skin.accent) : "#ffd9a0";
+        glow.addColorStop(0, "rgba(255,255,255,0.9)");
+        glow.addColorStop(0.4, mc);
+        glow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.globalAlpha = muzzle;
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 1.5 * muzzle, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(r * 1.3 * muzzle, -r * 0.3 * muzzle);
+        ctx.lineTo(r * 1.7 * muzzle, 0);
+        ctx.lineTo(r * 1.3 * muzzle, r * 0.3 * muzzle);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // hit spark arc on the side the damage came from
+      if (spark > 0.02) {
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = spark;
+        ctx.strokeStyle = "rgba(255,240,220,0.9)";
+        ctx.lineWidth = r * 0.18 * spark;
+        ctx.beginPath();
+        ctx.arc(
+          x,
+          y - r * 0.4,
+          r * (1 + (1 - spark) * 0.7),
+          flinchAng + Math.PI - 0.8,
+          flinchAng + Math.PI + 0.8,
+        );
+        ctx.stroke();
+        ctx.restore();
+      }
     }
+
 
     // feet stay on the ground, body above leans & squashes
     for (const s of art ? [] : [-1, 1]) {
