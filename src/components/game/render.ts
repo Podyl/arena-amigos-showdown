@@ -44,13 +44,25 @@ type Anim = {
   land: number;
   /** shot recoil 1 -> 0 */
   fire: number;
+  /** attack pose timeline 1 -> 0 (anticipation -> strike -> recovery) */
+  atk: number;
+  /** muzzle flash intensity 1 -> 0, synced to the attack strike */
+  muzzle: number;
   /** hit flinch 1 -> 0 */
   hit: number;
+  /** impact spark intensity 1 -> 0 */
+  spark: number;
   /** direction the unit was facing when hit */
   hitAng: number;
+  /** slow idle sway phase, independent of the walk cycle */
+  idle: number;
+  /** dust puff when the unit starts/stops moving */
+  dust: number;
+  psp: number;
   pcd: number;
   pflash: number;
 };
+
 
 const anims = new Map<number, Anim>();
 let animLastTime = 0;
@@ -84,23 +96,37 @@ function tickAnim(
       aim,
       land: 0,
       fire: 0,
+      atk: 0,
+      muzzle: 0,
       hit: 0,
+      spark: 0,
       hitAng: aim,
+      idle: Math.random() * 6.28,
+      dust: 0,
+      psp: 0,
       pcd: cd,
       pflash: flash,
     };
     anims.set(id, a);
   }
   // a cooldown that jumped up means a shot just left the barrel
-  if (cd > a.pcd + 0.02) a.fire = 1;
+  if (cd > a.pcd + 0.02) {
+    a.fire = 1;
+    a.atk = 1;
+    a.muzzle = 1;
+  }
   a.pcd = cd;
   if (flash > a.pflash + 0.05) {
     a.hit = 1;
+    a.spark = 1;
     a.hitAng = aim;
   }
   a.pflash = flash;
   a.fire = Math.max(0, a.fire - dt * 5.5);
+  a.atk = Math.max(0, a.atk - dt * 3.4);
+  a.muzzle = Math.max(0, a.muzzle - dt * 9);
   a.hit = Math.max(0, a.hit - dt * 4.5);
+  a.spark = Math.max(0, a.spark - dt * 6);
   const ivx = dt > 0 ? (x - a.px) / dt : 0;
   const ivy = dt > 0 ? (y - a.py) / dt : 0;
   // smooth velocity so steps don't jitter on collisions
@@ -111,15 +137,22 @@ function tickAnim(
   a.py = y;
   const sp = Math.hypot(a.vx, a.vy);
   a.sp = Math.min(1, sp / Math.max(60, speedRef));
+  // accel/decel kicks up a dust puff at the feet
+  if (Math.abs(a.sp - a.psp) > 0.22) a.dust = 1;
+  a.psp = a.sp;
+  a.dust = Math.max(0, a.dust - dt * 2.6);
   // walk cycle speed follows actual pace; idle keeps a slow breathing cycle
   a.phase += dt * (2.2 + a.sp * 12);
   if (a.phase > Math.PI * 200) a.phase -= Math.PI * 200;
+  a.idle += dt * 1.35;
+  if (a.idle > Math.PI * 200) a.idle -= Math.PI * 200;
   const targetLean = Math.max(-0.22, Math.min(0.22, (a.vx / Math.max(120, speedRef)) * 0.22));
   a.lean += (targetLean - a.lean) * Math.min(1, dt * 8);
   a.aim = lerpAngle(a.aim, aim, Math.min(1, dt * 14));
   a.land = Math.max(0, a.land - dt * 3);
   return a;
 }
+
 
 function pruneAnims(alive: Set<number>) {
   if (anims.size < 64) return;
@@ -529,30 +562,44 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
   ) => {
     const B = BUILDS[build];
     const fire = an?.fire ?? 0;
+    const atkT = an?.atk ?? 0;
+    // attack timeline: wind-up (atk 1 -> 0.78), strike, then eased recovery
+    const anticip = atkT > 0.78 ? Math.sin(((1 - atkT) / 0.22) * Math.PI) : 0;
+    const strike = atkT <= 0.78 && atkT > 0 ? Math.pow(atkT / 0.78, 1.5) : 0;
     // anticipation on the way up, snap-back recoil on the way down
-    const kick = Math.sin(Math.min(1, fire) * Math.PI) * (fire > 0.75 ? -0.35 : 1);
+    const kick = an ? strike - anticip * 0.55 : Math.sin(Math.min(1, fire) * Math.PI);
+    const muzzle = an?.muzzle ?? 0;
     const flinch = an?.hit ?? 0;
+    const spark = an?.spark ?? 0;
     const flinchAng = an?.hitAng ?? 0;
     const sp = an?.sp ?? 0;
     const phase = an?.phase ?? 0;
+    const idleP = an?.idle ?? 0;
+    const dust = an?.dust ?? 0;
     const lean = an?.lean ?? 0;
     if (an) aim = an.aim;
-    // walk bounce + idle breathing
+    // walk bounce + layered idle breathing (chest rise + slow settle)
     const bounce = -Math.abs(Math.sin(phase)) * r * 0.16 * sp;
-    const breathe = Math.sin(phase * 0.9) * r * 0.03 * (1 - sp);
+    const breathe =
+      (Math.sin(idleP) * r * 0.045 + Math.sin(idleP * 2.1) * r * 0.012) * (1 - sp) -
+      r * 0.05 * strike;
     const bob = bounce + breathe;
+    // idle weight-shift keeps the pose alive when standing still
+    const sway = Math.sin(idleP * 0.7) * 0.035 * (1 - sp);
     // squash & stretch around the feet
     const sqy =
       1 +
       Math.sin(phase * 2) * 0.06 * sp +
-      Math.sin(phase * 0.9) * 0.012 * (1 - sp) -
-      kick * 0.09 +
-      flinch * 0.1;
+      Math.sin(idleP) * 0.02 * (1 - sp) -
+      kick * 0.11 +
+      anticip * 0.06 +
+      flinch * 0.12;
     const sqx = 1 / sqy;
     // ground-plane movement direction for foot placement
     const mvLen = Math.hypot(an?.vx ?? 0, an?.vy ?? 0) || 1;
     const dirX = (an?.vx ?? 0) / mvLen;
     const dirY = (an?.vy ?? 0) / mvLen;
+
     if (ring > 0) {
       ctx.strokeStyle = `rgba(255,255,255,${0.25 * ring})`;
       ctx.lineWidth = 3;
@@ -575,15 +622,25 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       ctx.restore();
     }
 
-    ctx.fillStyle = "rgba(0,0,0,0.34)";
+    // layered ground shadow: soft ambient occlusion + tight contact shadow
+    const air = Math.abs(bounce) / (r * 1.6);
     ctx.save();
-    ctx.globalAlpha = 1 - Math.abs(bounce) / (r * 0.4);
+    const sg = ctx.createRadialGradient(x, y + r * 0.92, r * 0.1, x, y + r * 0.92, r * 1.5);
+    sg.addColorStop(0, "rgba(0,0,0,0.4)");
+    sg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.globalAlpha = 0.75 - air * 0.5;
+    ctx.fillStyle = sg;
+    ctx.beginPath();
+    ctx.ellipse(x, y + r * 0.92, r * 1.5, r * 0.62, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = (1 - air) * 0.85;
+    ctx.fillStyle = "rgba(8,4,14,0.5)";
     ctx.beginPath();
     ctx.ellipse(
-      x,
-      y + r * 0.9,
-      r * 0.95 * (1 - Math.abs(bounce) / (r * 1.6)),
-      r * 0.38 * (1 - Math.abs(bounce) / (r * 1.6)),
+      x + Math.sin(idleP * 0.7) * r * 0.03,
+      y + r * 0.92,
+      r * 0.82 * (1 - air),
+      r * 0.3 * (1 - air),
       0,
       0,
       Math.PI * 2,
@@ -591,9 +648,30 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     ctx.fill();
     ctx.restore();
 
-    const pushX = -Math.cos(aim) * r * 0.16 * kick - Math.cos(flinchAng) * r * 0.2 * flinch;
-    const pushY = -Math.sin(aim) * r * 0.12 * kick - Math.sin(flinchAng) * r * 0.14 * flinch;
-    const shake = flinch * flinch * r * 0.1;
+    // dust puff on accel/decel and on each footfall
+    if (dust > 0.02 || (sp > 0.35 && Math.sin(phase * 2) > 0.9)) {
+      ctx.save();
+      ctx.globalAlpha = 0.18 * Math.max(dust, sp * 0.5);
+      ctx.fillStyle = "rgba(240,230,210,0.9)";
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(
+          x + s * r * (0.5 + (1 - dust) * 0.6),
+          y + r * 0.95,
+          r * (0.24 + (1 - dust) * 0.3),
+          r * 0.12,
+          0,
+          0,
+          Math.PI * 2,
+        );
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    const pushX = -Math.cos(aim) * r * 0.2 * kick - Math.cos(flinchAng) * r * 0.24 * flinch;
+    const pushY = -Math.sin(aim) * r * 0.15 * kick - Math.sin(flinchAng) * r * 0.17 * flinch;
+    const shake = flinch * flinch * r * 0.14;
     const jx = (Math.random() - 0.5) * shake;
     const jy = (Math.random() - 0.5) * shake;
     const bx = x;
@@ -613,9 +691,14 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       const h2 = r * 3.5;
       const w2 = h2 * (art.naturalWidth / art.naturalHeight);
       const feetY = y + r * 0.98;
+      const tilt =
+        lean * 0.9 +
+        sway +
+        (anticip * -0.1 + strike * 0.16) * face +
+        flinch * 0.2 * (Math.cos(flinchAng) >= 0 ? -1 : 1);
       ctx.save();
       ctx.translate(x + pushX + jx, feetY + pushY + jy);
-      ctx.rotate(lean * 0.9 + flinch * 0.14 * (Math.cos(flinchAng) >= 0 ? -1 : 1));
+      ctx.rotate(tilt);
       ctx.scale(face * sqx, sqy);
       ctx.translate(0, bob);
       if (skin?.aura) {
@@ -624,14 +707,71 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       }
       ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
       ctx.shadowBlur = 0;
+      // key light from upper left: a lightened offset copy reads as a rim
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = 0.16;
+      ctx.drawImage(art, -w2 / 2 - w2 * 0.035, -h2 - h2 * 0.02, w2, h2);
+      // muzzle bloom lights the whole body for a frame or two
+      if (muzzle > 0.02) {
+        ctx.globalAlpha = Math.min(0.5, muzzle * 0.5);
+        ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
+      }
       if (flash > 0.05) {
-        ctx.globalCompositeOperation = "lighter";
         ctx.globalAlpha = Math.min(0.85, flash * 1.4);
         ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
         ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
       }
       ctx.restore();
+
+      // VFX synced to the attack strike: muzzle flare at the barrel
+      if (muzzle > 0.02) {
+        const mx = x + Math.cos(aim) * r * 1.15;
+        const my = y - r * 0.35 + Math.sin(aim) * r * 1.15 + bob;
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.translate(mx, my);
+        ctx.rotate(aim);
+        const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.5 * muzzle);
+        const mc = skin ? color(skin.accent) : "#ffd9a0";
+        glow.addColorStop(0, "rgba(255,255,255,0.9)");
+        glow.addColorStop(0.4, mc);
+        glow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.globalAlpha = muzzle;
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 1.5 * muzzle, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(255,255,255,0.85)";
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(r * 1.3 * muzzle, -r * 0.3 * muzzle);
+        ctx.lineTo(r * 1.7 * muzzle, 0);
+        ctx.lineTo(r * 1.3 * muzzle, r * 0.3 * muzzle);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // hit spark arc on the side the damage came from
+      if (spark > 0.02) {
+        ctx.save();
+        ctx.globalCompositeOperation = "lighter";
+        ctx.globalAlpha = spark;
+        ctx.strokeStyle = "rgba(255,240,220,0.9)";
+        ctx.lineWidth = r * 0.18 * spark;
+        ctx.beginPath();
+        ctx.arc(
+          x,
+          y - r * 0.4,
+          r * (1 + (1 - spark) * 0.7),
+          flinchAng + Math.PI - 0.8,
+          flinchAng + Math.PI + 0.8,
+        );
+        ctx.stroke();
+        ctx.restore();
+      }
     }
+
 
     // feet stay on the ground, body above leans & squashes
     for (const s of art ? [] : [-1, 1]) {
