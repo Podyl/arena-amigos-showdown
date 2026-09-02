@@ -559,6 +559,8 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     skin?: Skin,
     build: BuildKind = "bulky",
     art?: HTMLImageElement | null,
+    sheetKey?: string,
+
   ) => {
     const B = BUILDS[build];
     const fire = an?.fire ?? 0;
