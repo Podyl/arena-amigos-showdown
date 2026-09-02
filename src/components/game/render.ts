@@ -704,9 +704,8 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     // pre-rendered art path: animate the sprite instead of drawing a vector body
     if (art) {
       const moving = sp > 0.12;
-      // face away from the camera when walking or aiming upwards
-      const facingAway = (moving ? dirY : Math.sin(aim)) < -0.15;
-      const fr = sheetKey ? sheetFrame(sheetKey, facingAway, phase, moving) : null;
+      const facingAway = (an?.back ?? 0) > 0.5;
+      const fr = sheetKey ? sheetFrame(sheetKey, facingAway, an?.walk ?? 0, moving) : null;
       const srcW = fr ? fr.sw : art.naturalWidth;
       const srcH = fr ? fr.sh : art.naturalHeight;
       const h2 = r * 3.5;
