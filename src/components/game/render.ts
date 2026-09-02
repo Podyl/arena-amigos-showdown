@@ -1,7 +1,7 @@
 import { ARENA_H, ARENA_W, WALLS, type GameState, type PowerKind } from "./engine";
 import { DECOR, TORCHES } from "./decor";
 import type { Skin } from "./skins";
-import { enemySpriteKey, sprite } from "./sprites";
+import { enemySpriteKey, sheetFrame, sprite } from "./sprites";
 
 const cache = new Map<string, string>();
 export function cssVar(name: string) {
@@ -559,6 +559,8 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     skin?: Skin,
     build: BuildKind = "bulky",
     art?: HTMLImageElement | null,
+    sheetKey?: string,
+
   ) => {
     const B = BUILDS[build];
     const fire = an?.fire ?? 0;
@@ -688,8 +690,18 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
 
     // pre-rendered art path: animate the sprite instead of drawing a vector body
     if (art) {
+      const moving = sp > 0.12;
+      // face away from the camera when walking or aiming upwards
+      const facingAway = (moving ? dirY : Math.sin(aim)) < -0.15;
+      const fr = sheetKey ? sheetFrame(sheetKey, facingAway, phase, moving) : null;
+      const srcW = fr ? fr.sw : art.naturalWidth;
+      const srcH = fr ? fr.sh : art.naturalHeight;
       const h2 = r * 3.5;
-      const w2 = h2 * (art.naturalWidth / art.naturalHeight);
+      const w2 = h2 * (srcW / srcH);
+      const blit = (dx: number, dy: number) => {
+        if (fr) ctx.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, dx, dy, w2, h2);
+        else ctx.drawImage(art, dx, dy, w2, h2);
+      };
       const feetY = y + r * 0.98;
       const tilt =
         lean * 0.9 +
@@ -705,23 +717,24 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
         ctx.shadowColor = color(skin.aura);
         ctx.shadowBlur = r * 0.9;
       }
-      ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
+      blit(-w2 / 2, -h2);
       ctx.shadowBlur = 0;
       // key light from upper left: a lightened offset copy reads as a rim
       ctx.globalCompositeOperation = "lighter";
       ctx.globalAlpha = 0.16;
-      ctx.drawImage(art, -w2 / 2 - w2 * 0.035, -h2 - h2 * 0.02, w2, h2);
+      blit(-w2 / 2 - w2 * 0.035, -h2 - h2 * 0.02);
       // muzzle bloom lights the whole body for a frame or two
       if (muzzle > 0.02) {
         ctx.globalAlpha = Math.min(0.5, muzzle * 0.5);
-        ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
+        blit(-w2 / 2, -h2);
       }
       if (flash > 0.05) {
         ctx.globalAlpha = Math.min(0.85, flash * 1.4);
-        ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
-        ctx.drawImage(art, -w2 / 2, -h2, w2, h2);
+        blit(-w2 / 2, -h2);
+        blit(-w2 / 2, -h2);
       }
       ctx.restore();
+
 
       // VFX synced to the attack strike: muzzle flare at the barrel
       if (muzzle > 0.02) {
@@ -1072,6 +1085,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
             ? "tank"
             : "lanky",
       sprite(enemySpriteKey(e.enemyKind)),
+      enemySpriteKey(e.enemyKind),
     );
   }
   pruneAnims(alive);
@@ -1107,6 +1121,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       g.skin,
       g.brawler.build,
       sprite(g.brawler.id),
+      g.brawler.id,
     );
     drawSkinFx(ctx, g, h0.pos.x, h0.pos.y, h0.radius);
   }
