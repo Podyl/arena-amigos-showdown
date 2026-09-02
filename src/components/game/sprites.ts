@@ -60,10 +60,10 @@ export type Frame = {
 };
 
 /**
- * Pick a walk-cycle frame. `back` flips to the away-facing rows, `t` is the
- * walk phase (radians) and `moving` picks the idle frame when standing still.
+ * Pick a walk-cycle frame. `back` flips to the away-facing rows, `walk` counts
+ * frames elapsed (advanced by distance) and `moving` holds the idle pose.
  */
-export function sheetFrame(key: string, back: boolean, t: number, moving: boolean): Frame | null {
+export function sheetFrame(key: string, back: boolean, walk: number, moving: boolean): Frame | null {
   const def = SHEETS[key];
   if (!def) return null;
   const img = load(key + ":sheet", def.src);
@@ -72,9 +72,7 @@ export function sheetFrame(key: string, back: boolean, t: number, moving: boolea
   const sh = img.naturalHeight / def.rows;
   const rows = back ? def.back : def.front;
   const total = rows.length * def.cols;
-  const idx = moving
-    ? Math.floor((((t / (Math.PI * 2)) % 1) + 1) % 1 * total) % total
-    : 0;
+  const idx = moving ? ((Math.floor(walk) % total) + total) % total : 0;
   const row = rows[Math.floor(idx / def.cols)]!;
   const col = idx % def.cols;
   return { img, sx: col * sw, sy: row * sh, sw, sh };

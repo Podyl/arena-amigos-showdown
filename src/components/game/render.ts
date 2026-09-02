@@ -58,6 +58,10 @@ type Anim = {
   idle: number;
   /** dust puff when the unit starts/stops moving */
   dust: number;
+  /** walk-cycle frame accumulator, advanced by distance travelled */
+  walk: number;
+  /** smoothed front(0)/back(1) facing so the sprite doesn't flicker */
+  back: number;
   psp: number;
   pcd: number;
   pflash: number;
@@ -103,6 +107,8 @@ function tickAnim(
       hitAng: aim,
       idle: Math.random() * 6.28,
       dust: 0,
+      walk: Math.random() * 4,
+      back: 0,
       psp: 0,
       pcd: cd,
       pflash: flash,
@@ -144,6 +150,13 @@ function tickAnim(
   // walk cycle speed follows actual pace; idle keeps a slow breathing cycle
   a.phase += dt * (2.2 + a.sp * 12);
   if (a.phase > Math.PI * 200) a.phase -= Math.PI * 200;
+  // frames advance with distance covered, so steps land where the feet move
+  a.walk += (dt * (1.6 + a.sp * 7.4)) * (a.sp > 0.08 ? 1 : 0);
+  if (a.walk > 4096) a.walk -= 4096;
+  // facing flips only past a dead-zone, then eases, killing front/back flicker
+  const dy = sp > 20 ? a.vy / sp : Math.sin(aim);
+  const wantBack = dy < -0.35 ? 1 : dy > -0.05 ? 0 : a.back;
+  a.back += (wantBack - a.back) * Math.min(1, dt * 12);
   a.idle += dt * 1.35;
   if (a.idle > Math.PI * 200) a.idle -= Math.PI * 200;
   const targetLean = Math.max(-0.22, Math.min(0.22, (a.vx / Math.max(120, speedRef)) * 0.22));
@@ -691,28 +704,31 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     // pre-rendered art path: animate the sprite instead of drawing a vector body
     if (art) {
       const moving = sp > 0.12;
-      // face away from the camera when walking or aiming upwards
-      const facingAway = (moving ? dirY : Math.sin(aim)) < -0.15;
-      const fr = sheetKey ? sheetFrame(sheetKey, facingAway, phase, moving) : null;
+      const facingAway = (an?.back ?? 0) > 0.5;
+      const fr = sheetKey ? sheetFrame(sheetKey, facingAway, an?.walk ?? 0, moving) : null;
       const srcW = fr ? fr.sw : art.naturalWidth;
       const srcH = fr ? fr.sh : art.naturalHeight;
-      const h2 = r * 3.5;
+      const h2 = r * 3.85;
       const w2 = h2 * (srcW / srcH);
       const blit = (dx: number, dy: number) => {
         if (fr) ctx.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, dx, dy, w2, h2);
         else ctx.drawImage(art, dx, dy, w2, h2);
       };
       const feetY = y + r * 0.98;
+      // the frames already carry the walk cycle, so procedural motion stays light
+      const soft = fr ? 0.35 : 1;
       const tilt =
-        lean * 0.9 +
-        sway +
-        (anticip * -0.1 + strike * 0.16) * face +
-        flinch * 0.2 * (Math.cos(flinchAng) >= 0 ? -1 : 1);
+        (lean * 0.55 + sway * 0.6) * (fr ? 0.7 : 1) +
+        (anticip * -0.08 + strike * 0.13) * face +
+        flinch * 0.18 * (Math.cos(flinchAng) >= 0 ? -1 : 1);
+      const ssy = 1 + (sqy - 1) * soft;
+      const ssx = 1 / ssy;
       ctx.save();
       ctx.translate(x + pushX + jx, feetY + pushY + jy);
       ctx.rotate(tilt);
-      ctx.scale(face * sqx, sqy);
-      ctx.translate(0, bob);
+      ctx.scale(face * ssx, ssy);
+      ctx.translate(0, bob * soft);
+
       if (skin?.aura) {
         ctx.shadowColor = color(skin.aura);
         ctx.shadowBlur = r * 0.9;
