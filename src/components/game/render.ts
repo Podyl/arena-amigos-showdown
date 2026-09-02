@@ -1,7 +1,7 @@
 import { ARENA_H, ARENA_W, WALLS, type GameState, type PowerKind } from "./engine";
 import { DECOR, TORCHES } from "./decor";
 import type { Skin } from "./skins";
-import { enemySpriteKey, sprite } from "./sprites";
+import { enemySpriteKey, sheetFrame, sprite } from "./sprites";
 
 const cache = new Map<string, string>();
 export function cssVar(name: string) {
@@ -1085,6 +1085,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
             ? "tank"
             : "lanky",
       sprite(enemySpriteKey(e.enemyKind)),
+      enemySpriteKey(e.enemyKind),
     );
   }
   pruneAnims(alive);
@@ -1120,6 +1121,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       g.skin,
       g.brawler.build,
       sprite(g.brawler.id),
+      g.brawler.id,
     );
     drawSkinFx(ctx, g, h0.pos.x, h0.pos.y, h0.radius);
   }
