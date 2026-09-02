@@ -708,23 +708,27 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       const fr = sheetKey ? sheetFrame(sheetKey, facingAway, an?.walk ?? 0, moving) : null;
       const srcW = fr ? fr.sw : art.naturalWidth;
       const srcH = fr ? fr.sh : art.naturalHeight;
-      const h2 = r * 3.5;
+      const h2 = r * 3.85;
       const w2 = h2 * (srcW / srcH);
       const blit = (dx: number, dy: number) => {
         if (fr) ctx.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, dx, dy, w2, h2);
         else ctx.drawImage(art, dx, dy, w2, h2);
       };
       const feetY = y + r * 0.98;
+      // the frames already carry the walk cycle, so procedural motion stays light
+      const soft = fr ? 0.35 : 1;
       const tilt =
-        lean * 0.9 +
-        sway +
-        (anticip * -0.1 + strike * 0.16) * face +
-        flinch * 0.2 * (Math.cos(flinchAng) >= 0 ? -1 : 1);
+        (lean * 0.55 + sway * 0.6) * (fr ? 0.7 : 1) +
+        (anticip * -0.08 + strike * 0.13) * face +
+        flinch * 0.18 * (Math.cos(flinchAng) >= 0 ? -1 : 1);
+      const ssy = 1 + (sqy - 1) * soft;
+      const ssx = 1 / ssy;
       ctx.save();
       ctx.translate(x + pushX + jx, feetY + pushY + jy);
       ctx.rotate(tilt);
-      ctx.scale(face * sqx, sqy);
-      ctx.translate(0, bob);
+      ctx.scale(face * ssx, ssy);
+      ctx.translate(0, bob * soft);
+
       if (skin?.aura) {
         ctx.shadowColor = color(skin.aura);
         ctx.shadowBlur = r * 0.9;
