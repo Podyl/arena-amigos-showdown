@@ -58,6 +58,10 @@ type Anim = {
   idle: number;
   /** dust puff when the unit starts/stops moving */
   dust: number;
+  /** walk-cycle frame accumulator, advanced by distance travelled */
+  walk: number;
+  /** smoothed front(0)/back(1) facing so the sprite doesn't flicker */
+  back: number;
   psp: number;
   pcd: number;
   pflash: number;
@@ -103,6 +107,8 @@ function tickAnim(
       hitAng: aim,
       idle: Math.random() * 6.28,
       dust: 0,
+      walk: Math.random() * 4,
+      back: 0,
       psp: 0,
       pcd: cd,
       pflash: flash,
@@ -144,6 +150,13 @@ function tickAnim(
   // walk cycle speed follows actual pace; idle keeps a slow breathing cycle
   a.phase += dt * (2.2 + a.sp * 12);
   if (a.phase > Math.PI * 200) a.phase -= Math.PI * 200;
+  // frames advance with distance covered, so steps land where the feet move
+  a.walk += (dt * (1.6 + a.sp * 7.4)) * (a.sp > 0.08 ? 1 : 0);
+  if (a.walk > 4096) a.walk -= 4096;
+  // facing flips only past a dead-zone, then eases, killing front/back flicker
+  const dy = sp > 20 ? a.vy / sp : Math.sin(aim);
+  const wantBack = dy < -0.35 ? 1 : dy > -0.05 ? 0 : a.back;
+  a.back += (wantBack - a.back) * Math.min(1, dt * 12);
   a.idle += dt * 1.35;
   if (a.idle > Math.PI * 200) a.idle -= Math.PI * 200;
   const targetLean = Math.max(-0.22, Math.min(0.22, (a.vx / Math.max(120, speedRef)) * 0.22));
