@@ -62,6 +62,10 @@ type Anim = {
   walk: number;
   /** smoothed front(0)/back(1) facing so the sprite doesn't flicker */
   back: number;
+  /** hysteresis-selected body orientation, preventing diagonal pose chatter */
+  bodyMode: "front" | "back" | "side";
+  /** horizontal profile direction, independent from the aim direction */
+  sideRight: boolean;
   psp: number;
   pcd: number;
   pflash: number;
@@ -109,6 +113,8 @@ function tickAnim(
       dust: 0,
       walk: Math.random() * 4,
       back: 0,
+      bodyMode: "front",
+      sideRight: true,
       psp: 0,
       pcd: cd,
       pflash: flash,
@@ -153,7 +159,21 @@ function tickAnim(
   // frames advance with distance covered, so steps land where the feet move
   a.walk += (dt * (1.6 + a.sp * 7.4)) * (a.sp > 0.08 ? 1 : 0);
   if (a.walk > 4096) a.walk -= 4096;
-  // facing flips only past a dead-zone, then eases, killing front/back flicker
+  // Select the body pose from travel direction with hysteresis. This keeps a
+  // diagonal walk from rapidly alternating between profile and front poses.
+  if (sp > 20) {
+    const ax = Math.abs(a.vx);
+    const ay = Math.abs(a.vy);
+    if (a.bodyMode === "side") {
+      if (ay > ax * 1.3) a.bodyMode = a.vy < 0 ? "back" : "front";
+    } else if (ax > ay * 1.3) {
+      a.bodyMode = "side";
+    } else if (ay > ax * 1.3) {
+      a.bodyMode = a.vy < 0 ? "back" : "front";
+    }
+    if (ax > ay * 0.75) a.sideRight = a.vx >= 0;
+  }
+  // Vertical travel eases between front and back rather than snapping.
   const dy = sp > 20 ? a.vy / sp : Math.sin(aim);
   const wantBack = dy < -0.35 ? 1 : dy > -0.05 ? 0 : a.back;
   a.back += (wantBack - a.back) * Math.min(1, dt * 12);
@@ -695,9 +715,10 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
      // Use a real profile cycle for horizontal travel. The front/back sheets are
      // reserved for vertical travel, giving the character three readable body
      // orientations instead of always looking straight at the camera.
-     const profile = moving && Math.abs(an?.vx ?? 0) > Math.abs(an?.vy ?? 0) * 1.12;
-     const facingRight = profile ? (an?.vx ?? Math.cos(aim)) >= 0 : Math.cos(aim) >= 0;
-     const face = facingRight ? 1 : -1;
+     const profile = moving && an?.bodyMode === "side";
+     const facingRight = profile ? (an?.sideRight ?? true) : true;
+     // Front/back art is authored symmetrically; only the profile needs mirroring.
+     const face = profile && !facingRight ? -1 : 1;
      const ink = "rgba(20,12,26,0.9)";
      const outline = (w2: number) => {
        ctx.strokeStyle = ink;
@@ -710,7 +731,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
      // pre-rendered art path: use direction-specific walk cycles and preserve
      // the gun's aim independently from the body's travel direction.
      if (art) {
-       const facingAway = (an?.back ?? 0) > 0.5;
+       const facingAway = an?.bodyMode === "back" || (an?.bodyMode !== "front" && (an?.back ?? 0) > 0.5);
        const fr = sheetKey
          ? sheetFrame(sheetKey, facingAway, an?.walk ?? 0, moving, profile)
          : null;
