@@ -62,6 +62,10 @@ type Anim = {
   walk: number;
   /** smoothed front(0)/back(1) facing so the sprite doesn't flicker */
   back: number;
+  /** hysteresis-selected body orientation, preventing diagonal pose chatter */
+  bodyMode: "front" | "back" | "side";
+  /** horizontal profile direction, independent from the aim direction */
+  sideRight: boolean;
   psp: number;
   pcd: number;
   pflash: number;
@@ -109,6 +113,8 @@ function tickAnim(
       dust: 0,
       walk: Math.random() * 4,
       back: 0,
+      bodyMode: "front",
+      sideRight: true,
       psp: 0,
       pcd: cd,
       pflash: flash,
@@ -153,7 +159,21 @@ function tickAnim(
   // frames advance with distance covered, so steps land where the feet move
   a.walk += (dt * (1.6 + a.sp * 7.4)) * (a.sp > 0.08 ? 1 : 0);
   if (a.walk > 4096) a.walk -= 4096;
-  // facing flips only past a dead-zone, then eases, killing front/back flicker
+  // Select the body pose from travel direction with hysteresis. This keeps a
+  // diagonal walk from rapidly alternating between profile and front poses.
+  if (sp > 20) {
+    const ax = Math.abs(a.vx);
+    const ay = Math.abs(a.vy);
+    if (a.bodyMode === "side") {
+      if (ay > ax * 1.3) a.bodyMode = a.vy < 0 ? "back" : "front";
+    } else if (ax > ay * 1.3) {
+      a.bodyMode = "side";
+    } else if (ay > ax * 1.3) {
+      a.bodyMode = a.vy < 0 ? "back" : "front";
+    }
+    if (ax > ay * 0.75) a.sideRight = a.vx >= 0;
+  }
+  // Vertical travel eases between front and back rather than snapping.
   const dy = sp > 20 ? a.vy / sp : Math.sin(aim);
   const wantBack = dy < -0.35 ? 1 : dy > -0.05 ? 0 : a.back;
   a.back += (wantBack - a.back) * Math.min(1, dt * 12);
@@ -689,38 +709,47 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     const shake = flinch * flinch * r * 0.14;
     const jx = (Math.random() - 0.5) * shake;
     const jy = (Math.random() - 0.5) * shake;
-    const bx = x;
-    const by = y + bob;
-    const face = Math.cos(aim) >= 0 ? 1 : -1;
-    const ink = "rgba(20,12,26,0.9)";
-    const outline = (w2: number) => {
-      ctx.strokeStyle = ink;
-      ctx.lineWidth = w2;
-      ctx.lineJoin = "round";
-      ctx.stroke();
-    };
-    const body = flash > 0.05 ? "#ffffff" : base;
+     const bx = x;
+     const by = y + bob;
+     const moving = sp > 0.12;
+     // Use a real profile cycle for horizontal travel. The front/back sheets are
+     // reserved for vertical travel, giving the character three readable body
+     // orientations instead of always looking straight at the camera.
+     const profile = moving && an?.bodyMode === "side";
+     const facingRight = profile ? (an?.sideRight ?? true) : true;
+     // Front/back art is authored symmetrically; only the profile needs mirroring.
+     const face = profile && !facingRight ? -1 : 1;
+     const ink = "rgba(20,12,26,0.9)";
+     const outline = (w2: number) => {
+       ctx.strokeStyle = ink;
+       ctx.lineWidth = w2;
+       ctx.lineJoin = "round";
+       ctx.stroke();
+     };
+     const body = flash > 0.05 ? "#ffffff" : base;
 
-    // pre-rendered art path: animate the sprite instead of drawing a vector body
-    if (art) {
-      const moving = sp > 0.12;
-      const facingAway = (an?.back ?? 0) > 0.5;
-      const fr = sheetKey ? sheetFrame(sheetKey, facingAway, an?.walk ?? 0, moving) : null;
-      const srcW = fr ? fr.sw : art.naturalWidth;
-      const srcH = fr ? fr.sh : art.naturalHeight;
-      const h2 = r * 3.85;
-      const w2 = h2 * (srcW / srcH);
-      const blit = (dx: number, dy: number) => {
-        if (fr) ctx.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, dx, dy, w2, h2);
-        else ctx.drawImage(art, dx, dy, w2, h2);
-      };
-      const feetY = y + r * 0.98;
-      // the frames already carry the walk cycle, so procedural motion stays light
-      const soft = fr ? 0.35 : 1;
-      const tilt =
-        (lean * 0.55 + sway * 0.6) * (fr ? 0.7 : 1) +
-        (anticip * -0.08 + strike * 0.13) * face +
-        flinch * 0.18 * (Math.cos(flinchAng) >= 0 ? -1 : 1);
+     // pre-rendered art path: use direction-specific walk cycles and preserve
+     // the gun's aim independently from the body's travel direction.
+     if (art) {
+       const facingAway = an?.bodyMode === "back" || (an?.bodyMode !== "front" && (an?.back ?? 0) > 0.5);
+       const fr = sheetKey
+         ? sheetFrame(sheetKey, facingAway, an?.walk ?? 0, moving, profile)
+         : null;
+       const srcW = fr ? fr.sw : art.naturalWidth;
+       const srcH = fr ? fr.sh : art.naturalHeight;
+       const h2 = r * 3.85;
+       const w2 = h2 * (srcW / srcH);
+       const blit = (dx: number, dy: number) => {
+         if (fr) ctx.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, dx, dy, w2, h2);
+         else ctx.drawImage(art, dx, dy, w2, h2);
+       };
+       const feetY = y + r * 0.98;
+       // the baked frames carry the gait; keep only a small physical response
+       const soft = fr ? 0.18 : 1;
+       const tilt =
+         (lean * 0.55 + sway * 0.6) * (fr ? 0.7 : 1) +
+         (anticip * -0.08 + strike * 0.13) * face +
+         flinch * 0.18 * (Math.cos(flinchAng) >= 0 ? -1 : 1);
       const ssy = 1 + (sqy - 1) * soft;
       const ssx = 1 / ssy;
       ctx.save();
