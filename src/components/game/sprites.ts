@@ -116,13 +116,24 @@ export type Frame = {
   sh: number;
 };
 
-/**
- * Pick a walk-cycle frame. `back` flips to the away-facing rows, `walk` counts
- * frames elapsed (advanced by distance) and `moving` holds the idle pose.
- */
-export function sheetFrame(key: string, back: boolean, walk: number, moving: boolean): Frame | null {
+/** Pick a front/back frame or a true profile frame for natural 8-direction movement. */
+export function sheetFrame(
+  key: string,
+  back: boolean,
+  walk: number,
+  moving: boolean,
+  profile = false,
+): Frame | null {
   const def = SHEETS[key];
   if (!def) return null;
+  if (profile && def.side) {
+    const img = load(key + ":side", def.side.src);
+    if (!img) return null;
+    const sw = img.naturalWidth / def.side.cols;
+    const sh = img.naturalHeight;
+    const col = moving ? ((Math.floor(walk) % def.side.cols) + def.side.cols) % def.side.cols : 0;
+    return { img, sx: col * sw, sy: 0, sw, sh };
+  }
   const img = load(key + ":sheet", def.src);
   if (!img) return null;
   const sw = img.naturalWidth / def.cols;
@@ -137,7 +148,10 @@ export function sheetFrame(key: string, back: boolean, walk: number, moving: boo
 
 export function preloadSprites() {
   for (const k of Object.keys(SRC)) sprite(k);
-  for (const [k, d] of Object.entries(SHEETS)) load(k + ":sheet", d.src);
+  for (const [k, d] of Object.entries(SHEETS)) {
+    load(k + ":sheet", d.src);
+    if (d.side) load(k + ":side", d.side.src);
+  }
 }
 
 /** Enemy kind -> sprite key. Non-boss enemies all share the grunt art. */
