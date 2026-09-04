@@ -1,10 +1,15 @@
-name: Build Arena Amigos Artifact
+name: Build Arena Amigos Standalone
 
 on:
   workflow_dispatch:
   push:
     paths:
       - '.github/workflows/build-artifact.yml'
+      - 'standalone-index.html'
+      - 'src/standalone.tsx'
+      - 'vite.standalone.config.ts'
+      - 'src/components/game/**'
+      - 'src/styles.css'
 
 permissions:
   contents: read
@@ -18,10 +23,13 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - run: bun run build
-      - name: Upload built site
+      - name: Build standalone static game
+        run: bunx vite build --config vite.standalone.config.ts
+      - name: Verify index exists
+        run: test -f standalone-dist/standalone-index.html
+      - name: Upload standalone site
         uses: actions/upload-artifact@v4
         with:
-          name: arena-amigos-built-site
-          path: .output/public
+          name: arena-amigos-standalone-site
+          path: standalone-dist
           if-no-files-found: error
