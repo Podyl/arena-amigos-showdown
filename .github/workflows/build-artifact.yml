@@ -72,3 +72,5 @@ jobs:
           name: arena-amigos-standalone-site
           path: arena-amigos.html
           if-no-files-found: error
+
+# runtime verification rebuild
