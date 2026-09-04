@@ -593,6 +593,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     build: BuildKind = "bulky",
     art?: HTMLImageElement | null,
     sheetKey?: string,
+    lag?: number,
 
   ) => {
     const B = BUILDS[build];
@@ -1097,6 +1098,9 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     ctx.fillStyle = "rgba(0,0,0,0.65)";
     roundRect(ctx, x - bw / 2 - 2, barY - 2, bw + 4, 15, 8);
     ctx.fill();
+    ctx.fillStyle = "oklch(0.85 0.2 25)";
+    roundRect(ctx, x - bw / 2, barY, Math.max(0, ((lag ?? hp) / maxHp) * bw), 11, 6);
+    ctx.fill();
     ctx.fillStyle = boss ? "oklch(0.68 0.22 20)" : cssVar("--primary");
     roundRect(ctx, x - bw / 2, barY, Math.max(0, (hp / maxHp) * bw), 11, 6);
     ctx.fill();
@@ -1131,6 +1135,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
             : "lanky",
       sprite(enemySpriteKey(e.enemyKind)),
       enemySpriteKey(e.enemyKind),
+      e.hpLag,
     );
   }
   pruneAnims(alive);
@@ -1167,6 +1172,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       g.brawler.build,
       sprite(g.brawler.id),
       g.brawler.id,
+      h0.hpLag,
     );
     drawSkinFx(ctx, g, h0.pos.x, h0.pos.y, h0.radius);
   }
@@ -1237,7 +1243,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
   ctx.textBaseline = "middle";
   for (const t of g.texts) {
     ctx.globalAlpha = Math.min(1, t.life);
-    ctx.font = "bold 26px system-ui, sans-serif";
+    ctx.font = `900 ${Math.round(t.size ?? 26)}px system-ui, sans-serif`;
     ctx.lineWidth = 5;
     ctx.strokeStyle = "rgba(0,0,0,0.7)";
     ctx.strokeText(t.text, t.pos.x, t.pos.y);
