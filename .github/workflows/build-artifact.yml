@@ -3,7 +3,7 @@ name: Build Arena Amigos Standalone
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, brawl-final]
     paths:
       - '.github/workflows/build-artifact.yml'
       - 'standalone-index.html'
@@ -11,6 +11,7 @@ on:
       - 'vite.standalone.config.ts'
       - 'src/components/game/**'
       - 'src/styles.css'
+      - 'src/arena-brawl-ultimate.css'
 
 permissions:
   contents: write
@@ -50,23 +51,23 @@ jobs:
           Path('arena-amigos.html').write_text(html)
           print('one-file bytes:', Path('arena-amigos.html').stat().st_size)
           PY
-      - name: Publish standalone-live branch
+      - name: Publish standalone-final branch
         shell: bash
         run: |
           set -euo pipefail
           cp arena-amigos.html /tmp/arena-amigos.html
           git config user.name "Arena Amigos Bot"
           git config user.email "actions@users.noreply.github.com"
-          git checkout --orphan standalone-live
+          git checkout --orphan standalone-final
           git rm -rf .
           cp /tmp/arena-amigos.html ./arena-amigos.html
-          printf '# Arena Amigos standalone live build\n' > README.md
+          printf '# Arena Amigos final standalone build\n' > README.md
           git add arena-amigos.html README.md
-          git commit -m "Publish Arena Amigos standalone live build"
-          git push --force origin standalone-live
+          git commit -m "Publish Arena Amigos final standalone build"
+          git push --force origin standalone-final
       - name: Upload standalone site
         uses: actions/upload-artifact@v4
         with:
-          name: arena-amigos-standalone-site
+          name: arena-amigos-final-site
           path: arena-amigos.html
           if-no-files-found: error
