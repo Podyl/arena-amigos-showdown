@@ -1,0 +1,40 @@
+name: Apply Arena Amigos Overhaul
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/patches/arena-amigos-polish.patch'
+      - '.github/patches/gameplay-visual.patch'
+      - '.github/workflows/apply-arena-overhaul.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply gameplay and visual patches
+        run: |
+          set -e
+          git apply --check .github/patches/arena-amigos-polish.patch
+          git apply .github/patches/arena-amigos-polish.patch
+          git apply --check .github/patches/gameplay-visual.patch
+          git apply .github/patches/gameplay-visual.patch
+      - name: Verify build
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Commit real source changes
+        run: |
+          git config user.name "Arena Amigos Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add src IMPROVEMENTS.md
+          git commit -m "Apply Arena Amigos gameplay and visual overhaul"
+          git push origin main
