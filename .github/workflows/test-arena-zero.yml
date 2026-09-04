@@ -72,3 +72,4 @@ jobs:
             menu.png
             match.png
           if-no-files-found: warn
+# trigger visual test
