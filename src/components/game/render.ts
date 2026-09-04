@@ -586,6 +586,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     hp: number,
     maxHp: number,
     hat: string,
+    lag = hp,
     boss = false,
     ring = 0,
     an?: Anim,
@@ -1097,6 +1098,9 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     ctx.fillStyle = "rgba(0,0,0,0.65)";
     roundRect(ctx, x - bw / 2 - 2, barY - 2, bw + 4, 15, 8);
     ctx.fill();
+    ctx.fillStyle = "oklch(0.85 0.2 25)";
+    roundRect(ctx, x - bw / 2, barY, Math.max(0, (lag / maxHp) * bw), 11, 6);
+    ctx.fill();
     ctx.fillStyle = boss ? "oklch(0.68 0.22 20)" : cssVar("--primary");
     roundRect(ctx, x - bw / 2, barY, Math.max(0, (hp / maxHp) * bw), 11, 6);
     ctx.fill();
@@ -1237,7 +1241,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
   ctx.textBaseline = "middle";
   for (const t of g.texts) {
     ctx.globalAlpha = Math.min(1, t.life);
-    ctx.font = "bold 26px system-ui, sans-serif";
+    ctx.font = `900 ${Math.round(t.size ?? 26)}px system-ui, sans-serif`;
     ctx.lineWidth = 5;
     ctx.strokeStyle = "rgba(0,0,0,0.7)";
     ctx.strokeText(t.text, t.pos.x, t.pos.y);
