@@ -95,6 +95,10 @@ export type GameState = {
   powerLevel: number;
   dmgMult: number;
   bossKills: number;
+  ammo: number;
+  maxAmmo: number;
+  ammoReload: number;
+  lastDamageTime: number;
   hero: Entity;
   enemies: Entity[];
   bullets: Bullet[];
@@ -133,10 +137,13 @@ export function circleHitsWall(p: Vec, r: number) {
 }
 
 function moveWithCollision(e: Entity, dx: number, dy: number) {
+  const ox = e.pos.x;
+  const oy = e.pos.y;
   const nx = clamp(e.pos.x + dx, e.radius, ARENA_W - e.radius);
   if (!circleHitsWall({ x: nx, y: e.pos.y }, e.radius)) e.pos.x = nx;
   const ny = clamp(e.pos.y + dy, e.radius, ARENA_H - e.radius);
   if (!circleHitsWall({ x: e.pos.x, y: ny }, e.radius)) e.pos.y = ny;
+  return Math.hypot(e.pos.x - ox, e.pos.y - oy);
 }
 
 export function createGame(brawlerId: string, level = 1, skinId?: string): GameState {
@@ -150,6 +157,10 @@ export function createGame(brawlerId: string, level = 1, skinId?: string): GameS
     powerLevel: level,
     dmgMult: mods.damage,
     bossKills: 0,
+    ammo: 3,
+    maxAmmo: 3,
+    ammoReload: 0,
+    lastDamageTime: -99,
     hero: {
       id: nid(),
       pos: { x: ARENA_W / 2, y: ARENA_H - 220 },
@@ -409,6 +420,32 @@ function planWave(g: GameState): EnemyKind[] {
   return q;
 }
 
+function reloadSeconds(b: Brawler) {
+  if (b.id === "vex") return 0.82;
+  if (b.id === "blaze") return 1.05;
+  if (b.id === "nova") return 1.35;
+  if (b.id === "bunker") return 1.2;
+  return 1.1;
+}
+
+function moveEnemySmart(e: Entity, ang: number, want: number, strafe: number, dt: number) {
+  const fwdX = Math.cos(ang) * want + Math.cos(ang + Math.PI / 2) * strafe;
+  const fwdY = Math.sin(ang) * want + Math.sin(ang + Math.PI / 2) * strafe;
+  const step = e.speed * dt;
+  const moved = moveWithCollision(e, fwdX * step, fwdY * step);
+  if (moved > step * 0.22) return;
+
+  // When a direct route hits a wall, try both tangents and keep the clearer side.
+  const side = ((e.id * 1103515245) & 1) ? 1 : -1;
+  const a1 = ang + side * Math.PI / 2;
+  const a2 = ang - side * Math.PI / 2;
+  const ox = e.pos.x, oy = e.pos.y;
+  const m1 = moveWithCollision(e, Math.cos(a1) * step * 1.15, Math.sin(a1) * step * 1.15);
+  if (m1 > step * 0.18) return;
+  e.pos.x = ox; e.pos.y = oy;
+  moveWithCollision(e, Math.cos(a2) * step * 1.15, Math.sin(a2) * step * 1.15);
+}
+
 export function step(g: GameState, input: Input, dt: number) {
   g.time += dt;
   g.shake = Math.max(0, g.shake - dt * 40);
@@ -452,16 +489,41 @@ export function step(g: GameState, input: Input, dt: number) {
   moveWithCollision(h, input.move.x * speed * dt, input.move.y * speed * dt);
 
   if (input.aim.x || input.aim.y) h.aim = Math.atan2(input.aim.y, input.aim.x);
-  else if (input.move.x || input.move.y) h.aim = Math.atan2(input.move.y, input.move.x);
+  else if (input.shooting && g.enemies.length) {
+    // Mobile-friendly auto aim when the attack stick is tapped instead of dragged.
+    let best = g.enemies[0]!;
+    let bestD = dist(best.pos, h.pos);
+    for (const e of g.enemies) {
+      const d = dist(e.pos, h.pos);
+      if (d < bestD) { best = e; bestD = d; }
+    }
+    h.aim = Math.atan2(best.pos.y - h.pos.y, best.pos.x - h.pos.x);
+  } else if (input.move.x || input.move.y) h.aim = Math.atan2(input.move.y, input.move.x);
 
   h.cooldown -= dt;
   h.hitFlash = Math.max(0, h.hitFlash - dt * 4);
 
+  // Three-shot ammo rhythm plus out-of-combat regeneration.
+  if (g.ammo < g.maxAmmo) {
+    g.ammoReload += dt * (g.buffs.rapid > 0 ? 1.55 : 1);
+    if (g.ammoReload >= reloadSeconds(b)) {
+      g.ammo += 1;
+      g.ammoReload = 0;
+      sfx.pickup();
+    }
+  } else g.ammoReload = 0;
+
+  if (g.time - g.lastDamageTime > 3.2 && h.hp < h.maxHp) {
+    h.hp = Math.min(h.maxHp, h.hp + h.maxHp * 0.075 * dt);
+  }
+
   if (input.superPressed && g.super >= 100) {
     g.super = 0;
     heroSuper(g);
-  } else if (input.shooting && h.cooldown <= 0) {
+  } else if (input.shooting && h.cooldown <= 0 && g.ammo > 0) {
     heroFire(g);
+    g.ammo -= 1;
+    g.ammoReload = 0;
     h.cooldown = b.cooldown * (g.buffs.rapid > 0 ? 0.45 : 1);
   }
 
@@ -474,13 +536,12 @@ export function step(g: GameState, input: Input, dt: number) {
     let want = 0;
     if (e.enemyKind === "runner" || e.enemyKind === "brute") want = 1;
     else if (e.enemyKind === "boss") want = d > 260 ? 1 : -0.3;
-    else want = d > 300 ? 1 : d < 200 ? -0.6 : 0;
-    const strafe = Math.sin(g.time * 1.6 + e.id) * (e.enemyKind === "runner" ? 0.2 : 0.5);
-    moveWithCollision(
-      e,
-      (Math.cos(ang) * want + Math.cos(ang + Math.PI / 2) * strafe) * e.speed * dt,
-      (Math.sin(ang) * want + Math.sin(ang + Math.PI / 2) * strafe) * e.speed * dt,
-    );
+    else if (e.enemyKind === "shooter") want = d > 390 ? 1 : d < 285 ? -0.8 : 0;
+    else want = d > 320 ? 1 : d < 220 ? -0.55 : 0;
+    let strafe = Math.sin(g.time * 1.6 + e.id) * (e.enemyKind === "runner" ? 0.18 : 0.48);
+    if (e.enemyKind === "shooter") strafe *= 1.35;
+    if (e.enemyKind === "brute") strafe *= 0.35;
+    moveEnemySmart(e, ang, want, strafe, dt);
     e.cooldown -= dt;
 
     if (e.enemyKind === "runner" || e.enemyKind === "brute") {
@@ -689,6 +750,7 @@ function applyPower(g: GameState, kind: PowerKind) {
 
 function damageHero(g: GameState, dmg: number) {
   const h = g.hero;
+  g.lastDamageTime = g.time;
   const final = g.buffs.shield > 0 ? dmg * (hasSynergy(g.buffs, "phantom") ? 0.25 : 0.4) : dmg;
   h.hp -= final;
   h.hitFlash = 1;

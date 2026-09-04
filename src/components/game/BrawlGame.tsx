@@ -57,6 +57,9 @@ export function BrawlGame() {
     banner: "",
     synergies: [] as { name: string; color: string }[],
     boss: null as { hp: number; maxHp: number } | null,
+    ammo: 3,
+    maxAmmo: 3,
+    ammoReload: 0,
     buffs: { damage: 0, speed: 0, rapid: 0, shield: 0 },
   });
   const [skinPick, setSkinPick] = useState<Record<string, string>>({});
@@ -205,6 +208,9 @@ export function BrawlGame() {
         banner: g.banner?.text ?? "",
         synergies: activeSynergies(g.buffs).map((x) => ({ name: x.name, color: x.color })),
         boss: boss ? { hp: boss.hp, maxHp: boss.maxHp } : null,
+        ammo: g.ammo,
+        maxAmmo: g.maxAmmo,
+        ammoReload: g.ammoReload,
         buffs: { ...g.buffs },
       });
     };
@@ -231,6 +237,7 @@ export function BrawlGame() {
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
 
       {/* HUD */}
+      {phase === "playing" && (
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-4">
         <div className="rounded-xl bg-card/80 px-3 py-2 backdrop-blur">
           <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
@@ -259,8 +266,9 @@ export function BrawlGame() {
           </div>
         </div>
       </div>
+      )}
 
-      {hud.boss && (
+      {phase === "playing" && hud.boss && (
         <div className="pointer-events-none absolute inset-x-0 top-24 px-8">
           <div className="mx-auto max-w-sm">
             <p className="mb-1 text-center text-[10px] font-black tracking-[0.3em] text-destructive uppercase">
@@ -276,7 +284,7 @@ export function BrawlGame() {
         </div>
       )}
 
-      {hud.banner && (
+      {phase === "playing" && hud.banner && (
         <div className="pointer-events-none absolute inset-x-0 top-1/3 text-center">
           <p className="animate-pulse text-4xl font-black tracking-widest text-accent drop-shadow-lg">
             {hud.banner}
@@ -284,7 +292,7 @@ export function BrawlGame() {
         </div>
       )}
 
-      {hud.synergies.length > 0 && (
+      {phase === "playing" && hud.synergies.length > 0 && (
         <div className="pointer-events-none absolute inset-x-0 bottom-80 flex flex-wrap justify-center gap-2 px-6">
           {hud.synergies.map((sy) => (
             <span
@@ -302,7 +310,7 @@ export function BrawlGame() {
         </div>
       )}
 
-      {buffChips.length > 0 && (
+      {phase === "playing" && buffChips.length > 0 && (
         <div className="pointer-events-none absolute inset-x-0 bottom-72 flex flex-wrap justify-center gap-2 px-6">
           {buffChips.map((b) => (
             <span
@@ -315,6 +323,7 @@ export function BrawlGame() {
         </div>
       )}
 
+      {phase === "playing" && (
       <div className="pointer-events-none absolute inset-x-0 bottom-56 px-6">
         <div className="mx-auto max-w-sm space-y-2">
           <div className="h-3 overflow-hidden rounded-full border border-border bg-card/80">
@@ -322,6 +331,18 @@ export function BrawlGame() {
               className="h-full rounded-full bg-primary transition-[width] duration-150"
               style={{ width: `${(hud.hp / hud.maxHp) * 100}%` }}
             />
+          </div>
+          <div className="flex justify-center gap-2">
+            {Array.from({ length: hud.maxAmmo }).map((_, i) => (
+              <span key={i} className="h-3 w-14 overflow-hidden rounded-full border border-black/30 bg-card/80">
+                <span
+                  className="block h-full rounded-full bg-[#ffcf33] transition-all duration-150"
+                  style={{
+                    width: i < hud.ammo ? "100%" : i === hud.ammo && hud.ammo < hud.maxAmmo ? `${Math.min(100, (hud.ammoReload / 1.15) * 100)}%` : "0%",
+                  }}
+                />
+              </span>
+            ))}
           </div>
           <div className="h-2 overflow-hidden rounded-full border border-border bg-card/80">
             <div
@@ -331,12 +352,13 @@ export function BrawlGame() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Controls */}
       {phase === "playing" && (
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between p-6 pb-10">
           <Joystick
-            label="Rör"
+            label="RÖR"
             onChange={(x, y) => {
               inputRef.current.move = { x, y };
             }}
@@ -377,18 +399,48 @@ export function BrawlGame() {
 
       {/* Character select */}
       {phase === "select" && (
-        <div className="absolute inset-0 overflow-y-auto bg-background/92 px-5 py-8 backdrop-blur-sm">
-          <h2 className="text-center text-3xl font-black tracking-tight text-primary">
-            VÄLJ BRAWLER
-          </h2>
-          <div className="mx-auto mt-6 grid max-w-md grid-cols-2 gap-3">
+        <div className="arena-select absolute inset-0 overflow-y-auto px-5 py-6 backdrop-blur-sm">
+          <div className="mx-auto max-w-md">
+            <div className="mb-4 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setPhase("menu")}
+                className="rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-xs font-black text-white/80"
+              >
+                ← TILLBAKA
+              </button>
+              <p className="text-[10px] font-black tracking-[0.24em] text-white/60 uppercase">Välj fighter</p>
+            </div>
+            {(() => {
+              const b = BRAWLERS.find((x) => x.id === pick) ?? BRAWLERS[0]!;
+              return (
+                <div className="arena-picked relative mb-5 overflow-hidden rounded-[2rem] border-2 border-white/20 p-5">
+                  <div className="relative z-10 flex items-end gap-4">
+                    <div className="h-40 w-36 shrink-0">
+                      <img src={brawlerArt(b.id)} alt={b.name} className="size-full scale-125 object-contain object-bottom drop-shadow-2xl" />
+                    </div>
+                    <div className="min-w-0 flex-1 pb-2 text-left">
+                      <p className="text-[10px] font-black tracking-[0.22em] text-white/60 uppercase">Utvald</p>
+                      <h2 className="text-4xl font-black leading-none text-white">{b.name}</h2>
+                      <p className="mt-2 text-xs font-semibold text-white/70">{b.tagline}</p>
+                      <div className="mt-3 rounded-xl bg-black/20 p-2">
+                        <p className="text-[9px] font-black tracking-widest text-primary uppercase">SUPER · {b.superName}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+            <h2 className="mb-3 text-left text-xl font-black tracking-tight text-white">BRAWLERS</h2>
+          </div>
+          <div className="mx-auto grid max-w-md grid-cols-2 gap-3">
             {BRAWLERS.map((b) => (
               <button
                 key={b.id}
                 type="button"
                 onClick={() => setPick(b.id)}
-                className={`rounded-2xl border-2 p-3 text-left transition ${
-                  pick === b.id ? "border-accent bg-card" : "border-border bg-card/60"
+                className={`brawler-card rounded-2xl border-2 p-3 text-left transition ${
+                  pick === b.id ? "is-picked border-primary" : "border-white/10"
                 }`}
               >
                 <span
@@ -497,7 +549,7 @@ export function BrawlGame() {
           <button
             type="button"
             onClick={() => start(pick, skinPick[pick])}
-            className="mx-auto mt-7 block rounded-full bg-primary px-12 py-4 text-lg font-black tracking-wide text-primary-foreground uppercase shadow-[0_8px_0_oklch(0.6_0.16_85)] transition active:translate-y-1"
+            className="arena-play mx-auto mt-7 block rounded-2xl px-14 py-4 text-xl font-black tracking-wide text-white uppercase transition active:translate-y-1"
           >
             Kör
           </button>
@@ -623,15 +675,25 @@ export function BrawlGame() {
 
       {/* Overlays */}
       {(phase === "menu" || phase === "over") && (
-        <div className="absolute inset-0 overflow-y-auto bg-background/90 px-6 py-10 text-center backdrop-blur-sm">
-          <div className="mx-auto flex max-w-md flex-col items-center gap-5">
-            <div>
-              <h1 className="text-5xl font-black tracking-tight text-primary drop-shadow">
-                ARENA BRAWL
+        <div className="arena-menu absolute inset-0 overflow-y-auto px-6 py-8 text-center">
+          <div className="relative mx-auto flex min-h-full max-w-md flex-col items-center justify-center gap-5 py-6">
+            <div className="flex flex-col items-center">
+              <div className="arena-hero mb-4 size-36 overflow-hidden rounded-[2rem] border-4 border-white/70 bg-white/10 p-1">
+                <img
+                  src={brawlerArt(gameRef.current.brawler.id)}
+                  alt={gameRef.current.brawler.name}
+                  className="size-full scale-125 object-contain object-bottom drop-shadow-2xl"
+                />
+              </div>
+              <div className="mb-2 rounded-full border border-white/20 bg-black/20 px-4 py-1 text-[10px] font-black tracking-[0.24em] text-white/80 uppercase">
+                {gameRef.current.brawler.name} · {gameRef.current.brawler.tagline}
+              </div>
+              <h1 className="arena-logo text-5xl font-black tracking-[-0.06em] text-white sm:text-6xl">
+                ARENA AMIGOS
               </h1>
               <p className="mt-3 text-sm text-muted-foreground">
                 {phase === "menu"
-                  ? "Fyra brawlers, power-up-synergier och boss var femte våg. Klättra i rank innan säsongen tar slut."
+                  ? "Snabb arena-action med ammo, auto-aim, supers, power-ups och bossvågor."
                   : `Du föll på våg ${hud.wave}.`}
               </p>
             </div>
@@ -663,7 +725,7 @@ export function BrawlGame() {
                   unlockAudio();
                   setPhase("select");
                 }}
-                className="rounded-full bg-primary px-10 py-4 text-lg font-black tracking-wide text-primary-foreground uppercase shadow-[0_8px_0_oklch(0.6_0.16_85)] transition active:translate-y-1 active:shadow-[0_4px_0_oklch(0.6_0.16_85)]"
+                className="arena-play rounded-2xl px-14 py-4 text-xl font-black tracking-wide text-white uppercase transition active:translate-y-1"
               >
                 {phase === "menu" ? "Spela" : "Välj brawler"}
               </button>
@@ -685,7 +747,7 @@ export function BrawlGame() {
               </button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Dator: WASD för att röra dig, mellanslag för att skjuta, E för super.
+              Mobil: vänster spak rör dig · tryck eller dra höger spak för att skjuta. Dator: WASD + mus/mellanslag.
             </p>
           </div>
         </div>
