@@ -1,11 +1,9 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import { BrawlStarsLike } from "./components/game/BrawlStarsLike";
+import { ArenaBrawlUltimate } from "./components/game/ArenaBrawlUltimate";
 import "./styles.css";
-import "./brawl-stars-like.css";
+import "./arena-brawl-ultimate.css";
 
 createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <BrawlStarsLike />
-  </React.StrictMode>,
+  <ArenaBrawlUltimate />,
 );
