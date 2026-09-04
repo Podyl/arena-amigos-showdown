@@ -39,6 +39,8 @@ export type Entity = {
   speed: number;
   color: string;
   ringTimer: number;
+  /** Trailing health value used for the "damage lag" bar in the renderer. */
+  hpLag: number;
 };
 
 export type Bullet = {
@@ -83,7 +85,7 @@ export type PowerKind = "heal" | "damage" | "speed" | "shield" | "rapid";
 
 export type Pickup = { id: number; pos: Vec; bob: number; kind: PowerKind };
 
-export type FloatText = { pos: Vec; text: string; life: number; color: string };
+export type FloatText = { pos: Vec; text: string; life: number; color: string; size?: number; vx?: number; vy?: number };
 
 export type Buffs = { damage: number; speed: number; rapid: number; shield: number };
 
@@ -162,6 +164,7 @@ export function createGame(brawlerId: string, level = 1, skinId?: string): GameS
       speed: b.speed,
       color: skin.color,
       ringTimer: 0,
+      hpLag: hp,
     },
     enemies: [],
     bullets: [],
@@ -219,6 +222,7 @@ function spawnEnemy(g: GameState, kind: EnemyKind) {
     speed: s.speed + Math.min(50, g.wave * 5),
     color: s.color,
     ringTimer: 3,
+    hpLag: s.hp * tough,
   });
   burst(g, pos, s.color, kind === "boss" ? 60 : 12, kind === "boss" ? 420 : 220);
   addRing(g, pos, kind === "boss" ? 220 : 90, s.color, {
@@ -541,40 +545,60 @@ export function step(g: GameState, input: Input, dt: number) {
 
   for (const bl of g.bullets) {
     bl.trail.push({ x: bl.pos.x, y: bl.pos.y });
-    if (bl.trail.length > 6) bl.trail.shift();
-    bl.pos.x += bl.vel.x * dt;
-    bl.pos.y += bl.vel.y * dt;
+    if (bl.trail.length > 8) bl.trail.shift();
     bl.life -= dt;
-    if (
-      bl.pos.x < 0 ||
-      bl.pos.y < 0 ||
-      bl.pos.x > ARENA_W ||
-      bl.pos.y > ARENA_H ||
-      circleHitsWall(bl.pos, bl.radius)
-    ) {
-      bl.life = 0;
-      burst(g, bl.pos, bl.color, 4, 90);
-      continue;
-    }
-    if (bl.owner === "hero") {
-      for (const e of g.enemies) {
-        if (e.hp > 0 && !bl.hits.includes(e.id) && dist(bl.pos, e.pos) < e.radius + bl.radius) {
-          e.hp -= bl.damage;
-          e.hitFlash = 1;
-          bl.hits.push(e.id);
-          g.super = Math.min(100, g.super + (hasSynergy(g.buffs, "omega") ? 10 : 5));
-          if (hasSynergy(g.buffs, "berserk")) h.hp = Math.min(h.maxHp, h.hp + bl.damage * 0.12);
-          burst(g, bl.pos, bl.color, 6, 140);
-          sfx.hit();
-          if (bl.pierce > 0) bl.pierce -= 1;
-          else bl.life = 0;
-          break;
-        }
+
+    // Sub-step fast bullets so nothing tunnels through walls or thin enemies.
+    const travel = Math.hypot(bl.vel.x, bl.vel.y) * dt;
+    const steps = Math.max(1, Math.min(6, Math.ceil(travel / Math.max(6, bl.radius))));
+    const sdt = dt / steps;
+    for (let s = 0; s < steps && bl.life > 0; s++) {
+      bl.pos.x += bl.vel.x * sdt;
+      bl.pos.y += bl.vel.y * sdt;
+      if (
+        bl.pos.x < 0 ||
+        bl.pos.y < 0 ||
+        bl.pos.x > ARENA_W ||
+        bl.pos.y > ARENA_H ||
+        circleHitsWall(bl.pos, bl.radius)
+      ) {
+        bl.life = 0;
+        burst(g, bl.pos, bl.color, 5, 110);
+        addRing(g, bl.pos, 22, bl.color, { life: 0.14, width: 3, from: 3 });
+        break;
       }
-    } else if (dist(bl.pos, h.pos) < h.radius + bl.radius) {
-      damageHero(g, bl.damage);
-      bl.life = 0;
-      burst(g, bl.pos, bl.color, 6, 140);
+      if (bl.owner === "hero") {
+        for (const e of g.enemies) {
+          if (e.hp > 0 && !bl.hits.includes(e.id) && dist(bl.pos, e.pos) < e.radius + bl.radius) {
+            e.hp -= bl.damage;
+            e.hitFlash = 1;
+            bl.hits.push(e.id);
+            g.super = Math.min(100, g.super + (hasSynergy(g.buffs, "omega") ? 10 : 5));
+            if (hasSynergy(g.buffs, "berserk")) h.hp = Math.min(h.maxHp, h.hp + bl.damage * 0.12);
+            burst(g, bl.pos, bl.color, 7, 170);
+            addRing(g, bl.pos, 34, "#ffffff", { life: 0.13, width: 3, from: 4 });
+            const big = bl.damage >= 30;
+            if (big) g.shake = Math.max(g.shake, 5);
+            g.texts.push({
+              pos: { x: e.pos.x + (Math.random() - 0.5) * 18, y: e.pos.y - e.radius * 0.8 },
+              text: `${Math.round(bl.damage)}`,
+              life: big ? 0.85 : 0.6,
+              color: big ? "oklch(0.9 0.18 60)" : "oklch(0.97 0.02 90)",
+              size: big ? 30 : 22,
+              vx: (Math.random() - 0.5) * 30,
+              vy: -70,
+            });
+            sfx.hit();
+            if (bl.pierce > 0) bl.pierce -= 1;
+            else bl.life = 0;
+            break;
+          }
+        }
+      } else if (dist(bl.pos, h.pos) < h.radius + bl.radius) {
+        damageHero(g, bl.damage);
+        bl.life = 0;
+        burst(g, bl.pos, bl.color, 7, 170);
+      }
     }
   }
   g.bullets = g.bullets.filter((bl) => bl.life > 0);
@@ -624,10 +648,15 @@ export function step(g: GameState, input: Input, dt: number) {
   });
 
   for (const t of g.texts) {
-    t.pos.y -= dt * 40;
+    t.pos.x += (t.vx ?? 0) * dt;
+    t.pos.y += (t.vy ?? -40) * dt;
+    if (t.vy !== undefined) t.vy += 90 * dt;
     t.life -= dt;
   }
   g.texts = g.texts.filter((t) => t.life > 0);
+
+  for (const u of [h, ...g.enemies])
+    u.hpLag = u.hpLag > u.hp ? Math.max(u.hp, u.hpLag - Math.max(28, u.maxHp * 0.9) * dt) : u.hp;
 
   stepParticles(g, dt);
 
@@ -663,7 +692,17 @@ function damageHero(g: GameState, dmg: number) {
   const final = g.buffs.shield > 0 ? dmg * (hasSynergy(g.buffs, "phantom") ? 0.25 : 0.4) : dmg;
   h.hp -= final;
   h.hitFlash = 1;
-  g.shake = Math.max(g.shake, 6);
+  g.shake = Math.max(g.shake, final >= 15 ? 11 : 6);
+  addRing(g, h.pos, h.radius * 2.4, "oklch(0.65 0.24 25)", { life: 0.2, width: 5, from: h.radius });
+  g.texts.push({
+    pos: { x: h.pos.x, y: h.pos.y - h.radius },
+    text: `-${Math.round(final)}`,
+    life: 0.7,
+    color: "oklch(0.7 0.22 25)",
+    size: 24,
+    vx: (Math.random() - 0.5) * 20,
+    vy: -60,
+  });
   sfx.hurt();
 }
 
