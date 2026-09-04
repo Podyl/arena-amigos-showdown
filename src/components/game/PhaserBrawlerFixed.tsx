@@ -48,8 +48,8 @@ class Scene extends Phaser.Scene{
   drawWater(x:number,y:number,w:number,h:number){const g=this.add.graphics().setDepth(1);g.fillStyle(0x35afe4,.8);g.fillRoundedRect(x,y,w,h,28);g.lineStyle(7,0x9be9ff,.55);g.strokeRoundedRect(x+4,y+4,w-8,h-8,24);}
   drawBush(x:number,y:number){const c=this.add.container(x,y).setDepth(10);for(let i=0;i<9;i++){const a=i/9*Math.PI*2;c.add(this.add.circle(Math.cos(a)*35,Math.sin(a)*24,31,i%2?0x2e9846:0x47b65f).setStrokeStyle(3,0x24773a,.45))}c.add(this.add.circle(0,0,38,0x39a952));}
   wall(x:number,y:number,w:number,h:number){this.add.rectangle(x+w/2+10,y+h/2+14,w,h,0x76502e,.42).setDepth(6);const r=this.add.rectangle(x+w/2,y+h/2,w,h,0xc88745).setStrokeStyle(5,0x8f5d31).setDepth(8);this.add.rectangle(x+w/2,y+h/2-9,w-10,h-18,0xf1b96c).setStrokeStyle(3,0xffd89b,.5).setDepth(9);this.walls.add(r);(r.body as Phaser.Physics.Arcade.StaticBody).updateFromGameObject();}
-  spawnTeams(){const bp:Pick[]=[this.bridge.pick,"nova","bunker"],rp:Pick[]=["vex","blaze","nova"];bp.forEach((p,i)=>this.make("blue",p,SPAWNS.blue[i]!,i===0));rp.forEach((p,i)=>this.make("red",p,SPAWNS.red[i]!,false));}
-  make(team:Team,pick:Pick,pos:{x:number;y:number},human:boolean){
+  spawnTeams(){const bp:Pick[]=[this.bridge.pick,"nova","bunker"],rp:Pick[]=["vex","blaze","nova"];bp.forEach((p,i)=>this.makeFighter("blue",p,SPAWNS.blue[i]!,i===0));rp.forEach((p,i)=>this.makeFighter("red",p,SPAWNS.red[i]!,false));}
+  makeFighter(team:Team,pick:Pick,pos:{x:number;y:number},human:boolean){
     const s=this.physics.add.sprite(pos.x,pos.y,pick) as Fighter; const st=STATS[pick];
     s.team=team;s.pick=pick;s.hp=st.hp;s.maxHp=st.hp;s.ammo=3;s.reload=0;s.super=0;s.nextShot=0;s.respawnAt=0;s.human=human;
     s.setDisplaySize(145,145).setDepth(25).setCollideWorldBounds(true).setOrigin(.5,.64);
