@@ -40,6 +40,9 @@ export function BrawlGame() {
   const gameRef = useRef<GameState>(createGame("blaze"));
   const inputRef = useRef<Input>(emptyInput());
   const keys = useRef<Record<string, boolean>>({});
+  /** Desktop pointer aim, in screen space relative to the canvas centre. */
+  const mouseAim = useRef({ x: 0, y: 0, active: false, down: false });
+  const hudClock = useRef(0);
   const [phase, setPhase] = useState<Phase>("menu");
   const phaseRef = useRef<Phase>("menu");
   const [pick, setPick] = useState(BRAWLERS[0]!.id);
@@ -118,6 +121,30 @@ export function BrawlGame() {
     resize();
     window.addEventListener("resize", resize);
 
+    const aimFrom = (e: PointerEvent) => {
+      const r = canvas.getBoundingClientRect();
+      const dx = e.clientX - (r.left + r.width / 2);
+      const dy = e.clientY - (r.top + r.height / 2);
+      const l = Math.hypot(dx, dy) || 1;
+      mouseAim.current.x = dx / l;
+      mouseAim.current.y = dy / l;
+      mouseAim.current.active = true;
+    };
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType === "mouse") aimFrom(e);
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
+      aimFrom(e);
+      mouseAim.current.down = true;
+    };
+    const onUp = (e: PointerEvent) => {
+      if (e.pointerType === "mouse") mouseAim.current.down = false;
+    };
+    canvas.addEventListener("pointermove", onMove);
+    canvas.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointerup", onUp);
+
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       const dt = Math.min(0.033, (now - last) / 1000);
@@ -132,13 +159,17 @@ export function BrawlGame() {
       const len = Math.hypot(move.x, move.y) || 1;
       const norm = len > 1 ? { x: move.x / len, y: move.y / len } : move;
 
+      const m = mouseAim.current;
+      const stickAim = Math.hypot(inp.aim.x, inp.aim.y) > 0.01;
+      const aim = stickAim ? inp.aim : m.active ? { x: m.x, y: m.y } : { x: 0, y: 0 };
+
       if (phaseRef.current === "playing") {
         step(
           g,
           {
             move: norm,
-            aim: inp.aim,
-            shooting: inp.shooting || !!k[" "],
+            aim,
+            shooting: inp.shooting || m.down || !!k[" "],
             superPressed: inp.superPressed || !!k["e"],
           },
           dt,
@@ -160,6 +191,9 @@ export function BrawlGame() {
 
       const r = canvas.getBoundingClientRect();
       draw(ctx, g, r.width, r.height);
+      hudClock.current += dt;
+      if (hudClock.current < 0.1) return;
+      hudClock.current = 0;
       const boss = g.enemies.find((e) => e.enemyKind === "boss");
       setHud({
         hp: Math.round(g.hero.hp),
@@ -178,6 +212,9 @@ export function BrawlGame() {
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
+      canvas.removeEventListener("pointermove", onMove);
+      canvas.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointerup", onUp);
     };
   }, []);
 
@@ -322,9 +359,12 @@ export function BrawlGame() {
             <Joystick
               label="Skjut"
               variant="shoot"
+              deadzone={0.1}
+              onPress={() => {
+                inputRef.current.shooting = true;
+              }}
               onChange={(x, y) => {
-                inputRef.current.aim = { x, y };
-                inputRef.current.shooting = Math.hypot(x, y) > 0.2;
+                if (x || y) inputRef.current.aim = { x, y };
               }}
               onRelease={() => {
                 inputRef.current.shooting = false;
