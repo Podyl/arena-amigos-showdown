@@ -1,0 +1,27 @@
+name: Build Arena Amigos Artifact
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build-artifact.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Upload built site
+        uses: actions/upload-artifact@v4
+        with:
+          name: arena-amigos-built-site
+          path: .output/public
+          if-no-files-found: error
