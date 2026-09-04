@@ -301,7 +301,7 @@ function spawnParticle(g:any,x:number,y:number,kind:Particle["kind"],team:Team,m
 
 function drawGame(ctx:CanvasRenderingContext2D,g:any,sw:number,sh:number,t:number){
   ctx.save();ctx.setTransform(1,0,0,1,0,0);const bg=ctx.createLinearGradient(0,0,0,sh);bg.addColorStop(0,"#6ed7ff");bg.addColorStop(1,"#3fa5e9");ctx.fillStyle=bg;ctx.fillRect(0,0,sw,sh);
-  const zoom=clamp(Math.min(sw/930,sh/700),.72,1.08),sx=(Math.random()-.5)*g.shake,sy=(Math.random()-.5)*g.shake;ctx.translate(sw/2+sx,sh/2+sy);ctx.scale(zoom,zoom);ctx.translate(-g.cam.x,-g.cam.y);
+  const zoom=clamp(sw<600?.88:Math.min(sw/930,sh/700),.82,1.08),sx=(Math.random()-.5)*g.shake,sy=(Math.random()-.5)*g.shake;const halfW=sw/(2*zoom),halfH=sh/(2*zoom),camX=clamp(g.cam.x,halfW+22,WORLD_W-halfW-22),camY=clamp(g.cam.y,halfH+22,WORLD_H-halfH-22);ctx.translate(sw/2+sx,sh/2+sy);ctx.scale(zoom,zoom);ctx.translate(-camX,-camY);
   drawArena(ctx,t);
   const player=g.units.find((u:Unit)=>u.id===g.playerId) as Unit;if(player?.alive){const a=player.aim;ctx.save();ctx.globalAlpha=.18;ctx.fillStyle="#f7fff0";ctx.translate(player.x,player.y);ctx.rotate(a);ctx.beginPath();ctx.moveTo(28,-22);ctx.lineTo(STATS[player.pick].range, -54);ctx.lineTo(STATS[player.pick].range,54);ctx.lineTo(28,22);ctx.closePath();ctx.fill();ctx.restore();}
   for(const gem of g.gems as Gem[])if(gem.alive)drawGem(ctx,gem,t);
