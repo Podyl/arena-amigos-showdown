@@ -1135,6 +1135,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
             : "lanky",
       sprite(enemySpriteKey(e.enemyKind)),
       enemySpriteKey(e.enemyKind),
+      e.hpLag,
     );
   }
   pruneAnims(alive);
@@ -1171,6 +1172,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
       g.brawler.build,
       sprite(g.brawler.id),
       g.brawler.id,
+      h0.hpLag,
     );
     drawSkinFx(ctx, g, h0.pos.x, h0.pos.y, h0.radius);
   }
