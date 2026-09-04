@@ -1,0 +1,434 @@
+--- a/src/components/game/engine.ts
++++ b/src/components/game/engine.ts
+@@ -95,6 +95,10 @@
+   powerLevel: number;
+   dmgMult: number;
+   bossKills: number;
++  ammo: number;
++  maxAmmo: number;
++  ammoReload: number;
++  lastDamageTime: number;
+   hero: Entity;
+   enemies: Entity[];
+   bullets: Bullet[];
+@@ -133,10 +137,13 @@
+ }
+ 
+ function moveWithCollision(e: Entity, dx: number, dy: number) {
++  const ox = e.pos.x;
++  const oy = e.pos.y;
+   const nx = clamp(e.pos.x + dx, e.radius, ARENA_W - e.radius);
+   if (!circleHitsWall({ x: nx, y: e.pos.y }, e.radius)) e.pos.x = nx;
+   const ny = clamp(e.pos.y + dy, e.radius, ARENA_H - e.radius);
+   if (!circleHitsWall({ x: e.pos.x, y: ny }, e.radius)) e.pos.y = ny;
++  return Math.hypot(e.pos.x - ox, e.pos.y - oy);
+ }
+ 
+ export function createGame(brawlerId: string, level = 1, skinId?: string): GameState {
+@@ -150,6 +157,10 @@
+     powerLevel: level,
+     dmgMult: mods.damage,
+     bossKills: 0,
++    ammo: 3,
++    maxAmmo: 3,
++    ammoReload: 0,
++    lastDamageTime: -99,
+     hero: {
+       id: nid(),
+       pos: { x: ARENA_W / 2, y: ARENA_H - 220 },
+@@ -409,6 +420,32 @@
+   return q;
+ }
+ 
++function reloadSeconds(b: Brawler) {
++  if (b.id === "vex") return 0.82;
++  if (b.id === "blaze") return 1.05;
++  if (b.id === "nova") return 1.35;
++  if (b.id === "bunker") return 1.2;
++  return 1.1;
++}
++
++function moveEnemySmart(e: Entity, ang: number, want: number, strafe: number, dt: number) {
++  const fwdX = Math.cos(ang) * want + Math.cos(ang + Math.PI / 2) * strafe;
++  const fwdY = Math.sin(ang) * want + Math.sin(ang + Math.PI / 2) * strafe;
++  const step = e.speed * dt;
++  const moved = moveWithCollision(e, fwdX * step, fwdY * step);
++  if (moved > step * 0.22) return;
++
++  // When a direct route hits a wall, try both tangents and keep the clearer side.
++  const side = ((e.id * 1103515245) & 1) ? 1 : -1;
++  const a1 = ang + side * Math.PI / 2;
++  const a2 = ang - side * Math.PI / 2;
++  const ox = e.pos.x, oy = e.pos.y;
++  const m1 = moveWithCollision(e, Math.cos(a1) * step * 1.15, Math.sin(a1) * step * 1.15);
++  if (m1 > step * 0.18) return;
++  e.pos.x = ox; e.pos.y = oy;
++  moveWithCollision(e, Math.cos(a2) * step * 1.15, Math.sin(a2) * step * 1.15);
++}
++
+ export function step(g: GameState, input: Input, dt: number) {
+   g.time += dt;
+   g.shake = Math.max(0, g.shake - dt * 40);
+@@ -452,16 +489,41 @@
+   moveWithCollision(h, input.move.x * speed * dt, input.move.y * speed * dt);
+ 
+   if (input.aim.x || input.aim.y) h.aim = Math.atan2(input.aim.y, input.aim.x);
+-  else if (input.move.x || input.move.y) h.aim = Math.atan2(input.move.y, input.move.x);
++  else if (input.shooting && g.enemies.length) {
++    // Mobile-friendly auto aim when the attack stick is tapped instead of dragged.
++    let best = g.enemies[0]!;
++    let bestD = dist(best.pos, h.pos);
++    for (const e of g.enemies) {
++      const d = dist(e.pos, h.pos);
++      if (d < bestD) { best = e; bestD = d; }
++    }
++    h.aim = Math.atan2(best.pos.y - h.pos.y, best.pos.x - h.pos.x);
++  } else if (input.move.x || input.move.y) h.aim = Math.atan2(input.move.y, input.move.x);
+ 
+   h.cooldown -= dt;
+   h.hitFlash = Math.max(0, h.hitFlash - dt * 4);
+ 
++  // Three-shot ammo rhythm plus out-of-combat regeneration.
++  if (g.ammo < g.maxAmmo) {
++    g.ammoReload += dt * (g.buffs.rapid > 0 ? 1.55 : 1);
++    if (g.ammoReload >= reloadSeconds(b)) {
++      g.ammo += 1;
++      g.ammoReload = 0;
++      sfx.pickup();
++    }
++  } else g.ammoReload = 0;
++
++  if (g.time - g.lastDamageTime > 3.2 && h.hp < h.maxHp) {
++    h.hp = Math.min(h.maxHp, h.hp + h.maxHp * 0.075 * dt);
++  }
++
+   if (input.superPressed && g.super >= 100) {
+     g.super = 0;
+     heroSuper(g);
+-  } else if (input.shooting && h.cooldown <= 0) {
++  } else if (input.shooting && h.cooldown <= 0 && g.ammo > 0) {
+     heroFire(g);
++    g.ammo -= 1;
++    g.ammoReload = 0;
+     h.cooldown = b.cooldown * (g.buffs.rapid > 0 ? 0.45 : 1);
+   }
+ 
+@@ -474,13 +536,12 @@
+     let want = 0;
+     if (e.enemyKind === "runner" || e.enemyKind === "brute") want = 1;
+     else if (e.enemyKind === "boss") want = d > 260 ? 1 : -0.3;
+-    else want = d > 300 ? 1 : d < 200 ? -0.6 : 0;
+-    const strafe = Math.sin(g.time * 1.6 + e.id) * (e.enemyKind === "runner" ? 0.2 : 0.5);
+-    moveWithCollision(
+-      e,
+-      (Math.cos(ang) * want + Math.cos(ang + Math.PI / 2) * strafe) * e.speed * dt,
+-      (Math.sin(ang) * want + Math.sin(ang + Math.PI / 2) * strafe) * e.speed * dt,
+-    );
++    else if (e.enemyKind === "shooter") want = d > 390 ? 1 : d < 285 ? -0.8 : 0;
++    else want = d > 320 ? 1 : d < 220 ? -0.55 : 0;
++    let strafe = Math.sin(g.time * 1.6 + e.id) * (e.enemyKind === "runner" ? 0.18 : 0.48);
++    if (e.enemyKind === "shooter") strafe *= 1.35;
++    if (e.enemyKind === "brute") strafe *= 0.35;
++    moveEnemySmart(e, ang, want, strafe, dt);
+     e.cooldown -= dt;
+ 
+     if (e.enemyKind === "runner" || e.enemyKind === "brute") {
+@@ -689,6 +750,7 @@
+ 
+ function damageHero(g: GameState, dmg: number) {
+   const h = g.hero;
++  g.lastDamageTime = g.time;
+   const final = g.buffs.shield > 0 ? dmg * (hasSynergy(g.buffs, "phantom") ? 0.25 : 0.4) : dmg;
+   h.hp -= final;
+   h.hitFlash = 1;
+--- a/src/components/game/BrawlGame.tsx
++++ b/src/components/game/BrawlGame.tsx
+@@ -57,6 +57,9 @@
+     banner: "",
+     synergies: [] as { name: string; color: string }[],
+     boss: null as { hp: number; maxHp: number } | null,
++    ammo: 3,
++    maxAmmo: 3,
++    ammoReload: 0,
+     buffs: { damage: 0, speed: 0, rapid: 0, shield: 0 },
+   });
+   const [skinPick, setSkinPick] = useState<Record<string, string>>({});
+@@ -205,6 +208,9 @@
+         banner: g.banner?.text ?? "",
+         synergies: activeSynergies(g.buffs).map((x) => ({ name: x.name, color: x.color })),
+         boss: boss ? { hp: boss.hp, maxHp: boss.maxHp } : null,
++        ammo: g.ammo,
++        maxAmmo: g.maxAmmo,
++        ammoReload: g.ammoReload,
+         buffs: { ...g.buffs },
+       });
+     };
+@@ -231,6 +237,7 @@
+       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+ 
+       {/* HUD */}
++      {phase === "playing" && (
+       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-4">
+         <div className="rounded-xl bg-card/80 px-3 py-2 backdrop-blur">
+           <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+@@ -259,8 +266,9 @@
+           </div>
+         </div>
+       </div>
++      )}
+ 
+-      {hud.boss && (
++      {phase === "playing" && hud.boss && (
+         <div className="pointer-events-none absolute inset-x-0 top-24 px-8">
+           <div className="mx-auto max-w-sm">
+             <p className="mb-1 text-center text-[10px] font-black tracking-[0.3em] text-destructive uppercase">
+@@ -276,7 +284,7 @@
+         </div>
+       )}
+ 
+-      {hud.banner && (
++      {phase === "playing" && hud.banner && (
+         <div className="pointer-events-none absolute inset-x-0 top-1/3 text-center">
+           <p className="animate-pulse text-4xl font-black tracking-widest text-accent drop-shadow-lg">
+             {hud.banner}
+@@ -284,7 +292,7 @@
+         </div>
+       )}
+ 
+-      {hud.synergies.length > 0 && (
++      {phase === "playing" && hud.synergies.length > 0 && (
+         <div className="pointer-events-none absolute inset-x-0 bottom-80 flex flex-wrap justify-center gap-2 px-6">
+           {hud.synergies.map((sy) => (
+             <span
+@@ -302,7 +310,7 @@
+         </div>
+       )}
+ 
+-      {buffChips.length > 0 && (
++      {phase === "playing" && buffChips.length > 0 && (
+         <div className="pointer-events-none absolute inset-x-0 bottom-72 flex flex-wrap justify-center gap-2 px-6">
+           {buffChips.map((b) => (
+             <span
+@@ -315,6 +323,7 @@
+         </div>
+       )}
+ 
++      {phase === "playing" && (
+       <div className="pointer-events-none absolute inset-x-0 bottom-56 px-6">
+         <div className="mx-auto max-w-sm space-y-2">
+           <div className="h-3 overflow-hidden rounded-full border border-border bg-card/80">
+@@ -323,6 +332,18 @@
+               style={{ width: `${(hud.hp / hud.maxHp) * 100}%` }}
+             />
+           </div>
++          <div className="flex justify-center gap-2">
++            {Array.from({ length: hud.maxAmmo }).map((_, i) => (
++              <span key={i} className="h-3 w-14 overflow-hidden rounded-full border border-black/30 bg-card/80">
++                <span
++                  className="block h-full rounded-full bg-[#ffcf33] transition-all duration-150"
++                  style={{
++                    width: i < hud.ammo ? "100%" : i === hud.ammo && hud.ammo < hud.maxAmmo ? `${Math.min(100, (hud.ammoReload / 1.15) * 100)}%` : "0%",
++                  }}
++                />
++              </span>
++            ))}
++          </div>
+           <div className="h-2 overflow-hidden rounded-full border border-border bg-card/80">
+             <div
+               className="h-full rounded-full bg-accent transition-[width] duration-150"
+@@ -331,12 +352,13 @@
+           </div>
+         </div>
+       </div>
++      )}
+ 
+       {/* Controls */}
+       {phase === "playing" && (
+         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between p-6 pb-10">
+           <Joystick
+-            label="Rör"
++            label="RÖR"
+             onChange={(x, y) => {
+               inputRef.current.move = { x, y };
+             }}
+@@ -377,18 +399,48 @@
+ 
+       {/* Character select */}
+       {phase === "select" && (
+-        <div className="absolute inset-0 overflow-y-auto bg-background/92 px-5 py-8 backdrop-blur-sm">
+-          <h2 className="text-center text-3xl font-black tracking-tight text-primary">
+-            VÄLJ BRAWLER
+-          </h2>
+-          <div className="mx-auto mt-6 grid max-w-md grid-cols-2 gap-3">
++        <div className="arena-select absolute inset-0 overflow-y-auto px-5 py-6 backdrop-blur-sm">
++          <div className="mx-auto max-w-md">
++            <div className="mb-4 flex items-center justify-between">
++              <button
++                type="button"
++                onClick={() => setPhase("menu")}
++                className="rounded-xl border border-white/15 bg-black/20 px-3 py-2 text-xs font-black text-white/80"
++              >
++                ← TILLBAKA
++              </button>
++              <p className="text-[10px] font-black tracking-[0.24em] text-white/60 uppercase">Välj fighter</p>
++            </div>
++            {(() => {
++              const b = BRAWLERS.find((x) => x.id === pick) ?? BRAWLERS[0]!;
++              return (
++                <div className="arena-picked relative mb-5 overflow-hidden rounded-[2rem] border-2 border-white/20 p-5">
++                  <div className="relative z-10 flex items-end gap-4">
++                    <div className="h-40 w-36 shrink-0">
++                      <img src={brawlerArt(b.id)} alt={b.name} className="size-full scale-125 object-contain object-bottom drop-shadow-2xl" />
++                    </div>
++                    <div className="min-w-0 flex-1 pb-2 text-left">
++                      <p className="text-[10px] font-black tracking-[0.22em] text-white/60 uppercase">Utvald</p>
++                      <h2 className="text-4xl font-black leading-none text-white">{b.name}</h2>
++                      <p className="mt-2 text-xs font-semibold text-white/70">{b.tagline}</p>
++                      <div className="mt-3 rounded-xl bg-black/20 p-2">
++                        <p className="text-[9px] font-black tracking-widest text-primary uppercase">SUPER · {b.superName}</p>
++                      </div>
++                    </div>
++                  </div>
++                </div>
++              );
++            })()}
++            <h2 className="mb-3 text-left text-xl font-black tracking-tight text-white">BRAWLERS</h2>
++          </div>
++          <div className="mx-auto grid max-w-md grid-cols-2 gap-3">
+             {BRAWLERS.map((b) => (
+               <button
+                 key={b.id}
+                 type="button"
+                 onClick={() => setPick(b.id)}
+-                className={`rounded-2xl border-2 p-3 text-left transition ${
+-                  pick === b.id ? "border-accent bg-card" : "border-border bg-card/60"
++                className={`brawler-card rounded-2xl border-2 p-3 text-left transition ${
++                  pick === b.id ? "is-picked border-primary" : "border-white/10"
+                 }`}
+               >
+                 <span
+@@ -497,7 +549,7 @@
+           <button
+             type="button"
+             onClick={() => start(pick, skinPick[pick])}
+-            className="mx-auto mt-7 block rounded-full bg-primary px-12 py-4 text-lg font-black tracking-wide text-primary-foreground uppercase shadow-[0_8px_0_oklch(0.6_0.16_85)] transition active:translate-y-1"
++            className="arena-play mx-auto mt-7 block rounded-2xl px-14 py-4 text-xl font-black tracking-wide text-white uppercase transition active:translate-y-1"
+           >
+             Kör
+           </button>
+@@ -623,15 +675,25 @@
+ 
+       {/* Overlays */}
+       {(phase === "menu" || phase === "over") && (
+-        <div className="absolute inset-0 overflow-y-auto bg-background/90 px-6 py-10 text-center backdrop-blur-sm">
+-          <div className="mx-auto flex max-w-md flex-col items-center gap-5">
+-            <div>
+-              <h1 className="text-5xl font-black tracking-tight text-primary drop-shadow">
+-                ARENA BRAWL
++        <div className="arena-menu absolute inset-0 overflow-y-auto px-6 py-8 text-center">
++          <div className="relative mx-auto flex min-h-full max-w-md flex-col items-center justify-center gap-5 py-6">
++            <div className="flex flex-col items-center">
++              <div className="arena-hero mb-4 size-36 overflow-hidden rounded-[2rem] border-4 border-white/70 bg-white/10 p-1">
++                <img
++                  src={brawlerArt(gameRef.current.brawler.id)}
++                  alt={gameRef.current.brawler.name}
++                  className="size-full scale-125 object-contain object-bottom drop-shadow-2xl"
++                />
++              </div>
++              <div className="mb-2 rounded-full border border-white/20 bg-black/20 px-4 py-1 text-[10px] font-black tracking-[0.24em] text-white/80 uppercase">
++                {gameRef.current.brawler.name} · {gameRef.current.brawler.tagline}
++              </div>
++              <h1 className="arena-logo text-5xl font-black tracking-[-0.06em] text-white sm:text-6xl">
++                ARENA AMIGOS
+               </h1>
+               <p className="mt-3 text-sm text-muted-foreground">
+                 {phase === "menu"
+-                  ? "Fyra brawlers, power-up-synergier och boss var femte våg. Klättra i rank innan säsongen tar slut."
++                  ? "Snabb arena-action med ammo, auto-aim, supers, power-ups och bossvågor."
+                   : `Du föll på våg ${hud.wave}.`}
+               </p>
+             </div>
+@@ -663,7 +725,7 @@
+                   unlockAudio();
+                   setPhase("select");
+                 }}
+-                className="rounded-full bg-primary px-10 py-4 text-lg font-black tracking-wide text-primary-foreground uppercase shadow-[0_8px_0_oklch(0.6_0.16_85)] transition active:translate-y-1 active:shadow-[0_4px_0_oklch(0.6_0.16_85)]"
++                className="arena-play rounded-2xl px-14 py-4 text-xl font-black tracking-wide text-white uppercase transition active:translate-y-1"
+               >
+                 {phase === "menu" ? "Spela" : "Välj brawler"}
+               </button>
+@@ -685,7 +747,7 @@
+               </button>
+             </div>
+             <p className="text-xs text-muted-foreground">
+-              Dator: WASD för att röra dig, mellanslag för att skjuta, E för super.
++              Mobil: vänster spak rör dig · tryck eller dra höger spak för att skjuta. Dator: WASD + mus/mellanslag.
+             </p>
+           </div>
+         </div>
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -149,3 +149,63 @@
+     color: var(--color-foreground);
+   }
+ }
++
++/* Arena Amigos polish */
++html, body, #root { height: 100%; overscroll-behavior: none; }
++body { margin: 0; overflow: hidden; font-family: Inter, ui-rounded, "Arial Rounded MT Bold", system-ui, sans-serif; }
++button { -webkit-tap-highlight-color: transparent; }
++.arena-menu {
++  background:
++    radial-gradient(circle at 50% 25%, rgb(112 80 255 / .36), transparent 28%),
++    radial-gradient(circle at 15% 75%, rgb(39 184 255 / .25), transparent 30%),
++    linear-gradient(160deg, #1b1640 0%, #24175a 42%, #101b4a 100%);
++}
++.arena-menu::before {
++  content: "";
++  position: absolute; inset: 0; pointer-events: none; opacity: .16;
++  background-image: radial-gradient(circle, #fff 1.5px, transparent 1.5px);
++  background-size: 28px 28px;
++  mask-image: linear-gradient(to bottom, #000, transparent 75%);
++}
++.arena-logo {
++  text-shadow: 0 5px 0 #5329a8, 0 9px 0 #241155, 0 14px 32px rgb(0 0 0 / .48);
++  transform: rotate(-1deg);
++}
++.arena-play {
++  background: linear-gradient(#ffcf33, #ff9d18);
++  border: 3px solid #fff3a8;
++  box-shadow: 0 7px 0 #b6550a, 0 12px 28px rgb(0 0 0 / .36);
++  text-shadow: 0 2px 0 rgb(120 55 0 / .55);
++}
++.arena-play:active { box-shadow: 0 3px 0 #b6550a, 0 7px 18px rgb(0 0 0 / .3); }
++
++/* Mobile-game presentation pass */
++.arena-select {
++  background:
++    radial-gradient(circle at 50% 8%, rgb(86 100 255 / .34), transparent 30%),
++    linear-gradient(180deg, #131737 0%, #10142d 55%, #0d1024 100%);
++}
++.arena-picked {
++  background:
++    radial-gradient(circle at 28% 34%, rgb(255 211 74 / .18), transparent 32%),
++    linear-gradient(135deg, rgb(77 88 198 / .72), rgb(33 37 96 / .88));
++  box-shadow: inset 0 1px 0 rgb(255 255 255 / .12), 0 18px 44px rgb(0 0 0 / .28);
++}
++.brawler-card {
++  background: linear-gradient(160deg, rgb(255 255 255 / .09), rgb(255 255 255 / .035));
++  box-shadow: inset 0 1px 0 rgb(255 255 255 / .08), 0 8px 24px rgb(0 0 0 / .18);
++}
++.brawler-card.is-picked {
++  background: linear-gradient(160deg, rgb(255 213 72 / .2), rgb(255 255 255 / .06));
++  transform: translateY(-2px);
++  box-shadow: inset 0 1px 0 rgb(255 255 255 / .18), 0 12px 28px rgb(0 0 0 / .28);
++}
++.arena-hero {
++  background:
++    radial-gradient(circle at 50% 34%, rgb(255 225 110 / .26), transparent 45%),
++    linear-gradient(145deg, rgb(98 76 230 / .55), rgb(32 31 91 / .65));
++  box-shadow: 0 16px 42px rgb(0 0 0 / .35), inset 0 1px 0 rgb(255 255 255 / .2);
++}
++@media (max-width: 420px) {
++  .arena-logo { font-size: 2.9rem; }
++}
