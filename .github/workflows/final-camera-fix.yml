@@ -1,0 +1,30 @@
+name: Final camera polish
+on:
+  push:
+    branches: [brawl-final]
+    paths: ['.github/workflows/final-camera-fix.yml']
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clamp mobile camera to arena
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/components/game/ArenaBrawlUltimate.tsx')
+          s=p.read_text()
+          old='const zoom=clamp(Math.min(sw/930,sh/700),.72,1.08),sx=(Math.random()-.5)*g.shake,sy=(Math.random()-.5)*g.shake;ctx.translate(sw/2+sx,sh/2+sy);ctx.scale(zoom,zoom);ctx.translate(-g.cam.x,-g.cam.y);'
+          new='const zoom=clamp(sw<600?.88:Math.min(sw/930,sh/700),.82,1.08),sx=(Math.random()-.5)*g.shake,sy=(Math.random()-.5)*g.shake;const halfW=sw/(2*zoom),halfH=sh/(2*zoom),camX=clamp(g.cam.x,halfW+22,WORLD_W-halfW-22),camY=clamp(g.cam.y,halfH+22,WORLD_H-halfH-22);ctx.translate(sw/2+sx,sh/2+sy);ctx.scale(zoom,zoom);ctx.translate(-camX,-camY);'
+          if old not in s: raise SystemExit('camera target not found')
+          p.write_text(s.replace(old,new))
+          PY
+      - name: Commit camera fix
+        run: |
+          git config user.name 'Arena Amigos Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add src/components/game/ArenaBrawlUltimate.tsx
+          git commit -m 'Clamp final mobile camera inside arena'
+          git push origin brawl-final
