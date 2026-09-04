@@ -3,6 +3,7 @@ name: Build Arena Amigos Standalone
 on:
   workflow_dispatch:
   push:
+    branches: [main]
     paths:
       - '.github/workflows/build-artifact.yml'
       - 'standalone-index.html'
@@ -12,24 +13,60 @@ on:
       - 'src/styles.css'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - name: Build standalone static game
         run: bunx vite build --config vite.standalone.config.ts
-      - name: Verify index exists
-        run: test -f standalone-dist/standalone-index.html
+      - name: Create one-file game
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          root = Path('standalone-dist')
+          html = (root / 'standalone-index.html').read_text()
+          css_match = re.search(r'<link rel="stylesheet"[^>]*href="([^"]+)"[^>]*>', html)
+          js_match = re.search(r'<script type="module"[^>]*src="([^"]+)"[^>]*></script>', html)
+          if not css_match or not js_match:
+              raise SystemExit('Could not find built CSS/JS references')
+          css_path = root / css_match.group(1).lstrip('/')
+          js_path = root / js_match.group(1).lstrip('/')
+          css = css_path.read_text()
+          js = js_path.read_text()
+          html = html.replace(css_match.group(0), '<style>' + css + '</style>')
+          html = html.replace(js_match.group(0), '<script type="module">' + js + '</script>')
+          html = html.replace('/favicon.ico', 'data:image/x-icon;base64,')
+          Path('arena-amigos.html').write_text(html)
+          print('one-file bytes:', Path('arena-amigos.html').stat().st_size)
+          PY
+      - name: Publish standalone-live branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp arena-amigos.html /tmp/arena-amigos.html
+          git config user.name "Arena Amigos Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan standalone-live
+          git rm -rf .
+          cp /tmp/arena-amigos.html ./arena-amigos.html
+          printf '# Arena Amigos standalone live build\n' > README.md
+          git add arena-amigos.html README.md
+          git commit -m "Publish Arena Amigos standalone live build"
+          git push --force origin standalone-live
       - name: Upload standalone site
         uses: actions/upload-artifact@v4
         with:
           name: arena-amigos-standalone-site
-          path: standalone-dist
+          path: arena-amigos.html
           if-no-files-found: error
