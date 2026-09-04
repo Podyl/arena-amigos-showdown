@@ -1,0 +1,64 @@
+diff --git a/src/components/game/render.ts b/src/components/game/render.ts
+index 7badee6..13ea4ac 100644
+--- a/src/components/game/render.ts
++++ b/src/components/game/render.ts
+@@ -418,18 +418,19 @@ function drawWalls(ctx: CanvasRenderingContext2D) {
+     ctx.fill();
+ 
+     // side (extruded body)
+-    ctx.fillStyle = "oklch(0.28 0.04 60)";
++    ctx.fillStyle = "oklch(0.32 0.09 52)";
+     roundRect(ctx, wl.x, wl.y + 10, wl.w, wl.h, 14);
+     ctx.fill();
+ 
+     const wg = ctx.createLinearGradient(wl.x, wl.y, wl.x, wl.y + wl.h);
+-    wg.addColorStop(0, "oklch(0.56 0.06 62)");
+-    wg.addColorStop(1, cssVar("--wall"));
++    wg.addColorStop(0, "oklch(0.72 0.16 58)");
++    wg.addColorStop(1, "oklch(0.48 0.13 48)");
+     ctx.fillStyle = wg;
+     roundRect(ctx, wl.x, wl.y, wl.w, wl.h, 14);
+     ctx.fill();
+     ctx.strokeStyle = "rgba(255,255,255,0.16)";
+-    ctx.lineWidth = 4;
++    ctx.lineWidth = 6;
++    ctx.strokeStyle = "rgba(60,30,10,0.72)";
+     ctx.stroke();
+ 
+     // brick seams
+@@ -509,13 +510,24 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h:
+     ARENA_H / 2,
+     ARENA_H * 0.8,
+   );
+-  grad.addColorStop(0, "rgba(255,255,255,0.1)");
+-  grad.addColorStop(1, "rgba(0,0,0,0.4)");
++  grad.addColorStop(0, "rgba(255,255,255,0.18)");
++  grad.addColorStop(0.62, "rgba(80,180,90,0.03)");
++  grad.addColorStop(1, "rgba(0,0,0,0.28)");
+   ctx.fillStyle = grad;
+   ctx.fillRect(0, 0, ARENA_W, ARENA_H);
+ 
+   drawArenaMarks(ctx);
+ 
++  // chunky toy-arena edge glow
++  ctx.save();
++  ctx.strokeStyle = "rgba(255,210,80,0.22)";
++  ctx.lineWidth = 22;
++  ctx.strokeRect(12, 12, ARENA_W - 24, ARENA_H - 24);
++  ctx.strokeStyle = "rgba(255,255,255,0.18)";
++  ctx.lineWidth = 5;
++  ctx.strokeRect(24, 24, ARENA_W - 48, ARENA_H - 48);
++  ctx.restore();
++
+   // scorch decals
+   for (const d of g.decals) {
+     ctx.globalAlpha = Math.min(0.42, (d.life / d.max) * 0.42);
+@@ -738,7 +750,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h:
+          : null;
+        const srcW = fr ? fr.sw : art.naturalWidth;
+        const srcH = fr ? fr.sh : art.naturalHeight;
+-       const h2 = r * 3.85;
++       const h2 = r * 4.65;
+        const w2 = h2 * (srcW / srcH);
+        const blit = (dx: number, dy: number) => {
+          if (fr) ctx.drawImage(fr.img, fr.sx, fr.sy, fr.sw, fr.sh, dx, dy, w2, h2);
