@@ -586,7 +586,6 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     hp: number,
     maxHp: number,
     hat: string,
-    lag = hp,
     boss = false,
     ring = 0,
     an?: Anim,
@@ -594,6 +593,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     build: BuildKind = "bulky",
     art?: HTMLImageElement | null,
     sheetKey?: string,
+    lag?: number,
 
   ) => {
     const B = BUILDS[build];
@@ -1099,7 +1099,7 @@ export function draw(ctx: CanvasRenderingContext2D, g: GameState, w: number, h: 
     roundRect(ctx, x - bw / 2 - 2, barY - 2, bw + 4, 15, 8);
     ctx.fill();
     ctx.fillStyle = "oklch(0.85 0.2 25)";
-    roundRect(ctx, x - bw / 2, barY, Math.max(0, (lag / maxHp) * bw), 11, 6);
+    roundRect(ctx, x - bw / 2, barY, Math.max(0, ((lag ?? hp) / maxHp) * bw), 11, 6);
     ctx.fill();
     ctx.fillStyle = boss ? "oklch(0.68 0.22 20)" : cssVar("--primary");
     roundRect(ctx, x - bw / 2, barY, Math.max(0, (hp / maxHp) * bw), 11, 6);
