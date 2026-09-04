@@ -35,6 +35,6 @@ jobs:
         run: |
           git config user.name "Arena Amigos Bot"
           git config user.email "actions@users.noreply.github.com"
-          git add src IMPROVEMENTS.md
+          git add src
           git commit -m "Apply Arena Amigos gameplay and visual overhaul"
           git push origin main
