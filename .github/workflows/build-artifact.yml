@@ -3,7 +3,7 @@ name: Build Arena Amigos Standalone
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, brawl-rebuild]
     paths:
       - '.github/workflows/build-artifact.yml'
       - 'standalone-index.html'
@@ -11,6 +11,8 @@ on:
       - 'vite.standalone.config.ts'
       - 'src/components/game/**'
       - 'src/styles.css'
+      - 'src/phaser-brawler.css'
+      - 'package.json'
 
 permissions:
   contents: write
@@ -25,7 +27,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-      - run: bun install --frozen-lockfile
+      - run: bun install
       - name: Build standalone static game
         run: bunx vite build --config vite.standalone.config.ts
       - name: Create one-file game
