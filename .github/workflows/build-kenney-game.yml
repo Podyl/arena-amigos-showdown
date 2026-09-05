@@ -1,0 +1,42 @@
+name: Build Kenney Arena Game
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena-zero]
+    paths: ['.github/workflows/build-kenney-game.yml']
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: arena-zero, fetch-depth: 0}
+      - name: Build asset-backed 3D game
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('arena-zero-3d.html')
+          s=p.read_text()
+          # Add GLTFLoader and replace procedural hero in the running match with imported CC0 soldier GLB clones.
+          s=s.replace('<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>', '<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script><script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>')
+          marker="function makeHero(kind,team='blue'){"
+          s=s.replace("const HEROES=", "let KENNEY_SOLDIER=null;const HEROES=")
+          # Keep original hero function as fallback, then retrofit loaded GLB onto each hero group.
+          s=s.replace("g.scale.setScalar(s.scale);return g}function roundedBlock", "g.scale.setScalar(s.scale);if(KENNEY_SOLDIER){const model=KENNEY_SOLDIER.clone(true);model.scale.setScalar(1.25);model.position.y=.05;model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});body.visible=false;head.visible=false;hair.visible=false;nose.visible=false;armL.visible=false;armR.visible=false;gun.visible=false;g.add(model);g.userData.kenney=model}return g}function roundedBlock")
+          # Load GLB before menu setup/startup. URL-encode spaces for static hosting.
+          needle="function setupRenderer(host){"
+          loader="function loadKenney(){return new Promise(resolve=>{const L=new THREE.GLTFLoader();L.load('public/kenney-mini-arena/Models/GLB%20format/character-soldier.glb',g=>{KENNEY_SOLDIER=g.scene;resolve()},undefined,()=>resolve())})}"
+          s=s.replace(needle,loader+needle)
+          # Startup is at end; delay initial menu/world init until asset attempt completes by replacing immediate init call pattern if found.
+          if "initMenu();" in s:
+            s=s.replace("initMenu();", "loadKenney().then(()=>initMenu());",1)
+          p.write_text(s)
+          PY
+          git config user.name 'Arena Amigos Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add arena-zero-3d.html
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Use imported 3D soldier model in Arena Zero'
+          git push origin arena-zero
