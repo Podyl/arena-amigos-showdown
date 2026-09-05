@@ -1,0 +1,42 @@
+name: Upgrade Arena Zero visuals
+on:
+  push:
+    branches: [arena-zero]
+    paths: ['.github/workflows/upgrade-visuals.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: arena-zero, fetch-depth: 0}
+      - name: Replace primitive arena art with imported GLB assets
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('arena-zero-3d.html')
+          s=p.read_text()
+          s=s.replace('let KENNEY_SOLDIER=null;const HEROES=', 'let KENNEY_SOLDIER=null,KENNEY_ASSETS={};const HEROES=')
+          old="function loadKenney(){return new Promise(resolve=>{const L=new THREE.GLTFLoader();L.load('public/kenney-mini-arena/Models/GLB%20format/character-soldier.glb',g=>{KENNEY_SOLDIER=g.scene;resolve()},undefined,()=>resolve())})}"
+          new="function loadKenney(){const L=new THREE.GLTFLoader(),base='public/kenney-mini-arena/Models/GLB%20format/';const load=n=>new Promise(r=>L.load(base+n+'.glb',g=>r(g.scene),undefined,()=>r(null)));return Promise.all([load('character-soldier'),load('wall'),load('bricks'),load('tree'),load('column-damaged'),load('block')]).then(a=>{KENNEY_SOLDIER=a[0];KENNEY_ASSETS={wall:a[1],bricks:a[2],tree:a[3],column:a[4],block:a[5]}})}function assetFit(name,w,h,d){const src=KENNEY_ASSETS[name];if(!src)return null;const g=src.clone(true);g.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});const b=new THREE.Box3().setFromObject(g),z=new THREE.Vector3();b.getSize(z);g.scale.set(w/Math.max(z.x,.001),h/Math.max(z.y,.001),d/Math.max(z.z,.001));const b2=new THREE.Box3().setFromObject(g);g.position.y=-b2.min.y;return g}"
+          if old in s: s=s.replace(old,new)
+          old_loop="for(const [x,z,w,d] of defs){const q=roundedBlock(w,1.15,d,0xc9853f,0xf1b96d);q.position.set(x,0,z);q.userData.box={x,z,w,d};walls.push(q);scene.add(q)}"
+          new_loop="for(const [x,z,w,d] of defs){const q=roundedBlock(w,1.15,d,0xc9853f,0xf1b96d);q.position.set(x,0,z);q.userData.box={x,z,w,d};walls.push(q);q.visible=false;scene.add(q);const art=assetFit((Math.abs(x+z)%2<1)?'bricks':'wall',w,1.45,d);if(art){art.position.x=x;art.position.z=z;scene.add(art)}else q.visible=true}"
+          if old_loop in s: s=s.replace(old_loop,new_loop)
+          old_bush="for(const [x,z] of [[-7,0],[7,0],[-2.2,0],[2.2,0],[-10,2.2],[10,-2.2]])scene.add(bush(x,z));"
+          new_bush="for(const [x,z] of [[-7,0],[7,0],[-2.2,0],[2.2,0],[-10,2.2],[10,-2.2]]){const t=assetFit('tree',1.45,2.4,1.45);if(t){t.position.x=x;t.position.z=z;scene.add(t)}else scene.add(bush(x,z))}"
+          if old_bush in s: s=s.replace(old_bush,new_bush)
+          s=s.replace('const cam=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,.1,100);cam.position.set(0,15,14);', 'const cam=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,.1,100);cam.position.set(0,11.5,10.5);')
+          s=s.replace('const targetCam=new THREE.Vector3(p.position.x,13.5,p.position.z+10.5);', 'const targetCam=new THREE.Vector3(p.position.x,10.8,p.position.z+8.4);')
+          s=s.replace("scene.fog=new THREE.Fog(0x7acbff,22,38);", "scene.fog=new THREE.Fog(0x7acbff,26,46);")
+          p.write_text(s)
+          PY
+          git config user.name 'Arena Amigos Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add arena-zero-3d.html
+          git diff --cached --quiet && exit 0
+          git commit -m 'Use real 3D arena assets and tighter camera'
+          git push origin arena-zero
