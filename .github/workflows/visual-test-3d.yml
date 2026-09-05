@@ -1,0 +1,45 @@
+name: Visual Test Arena Zero 3D
+on:
+  push:
+    branches: [arena-zero]
+    paths: ['.github/workflows/visual-test-3d.yml']
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: arena-zero}
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - run: npm install --no-save puppeteer-core
+      - name: Run game in Chrome and capture menu/match
+        run: |
+          python3 -m http.server 8080 >/tmp/server.log 2>&1 &
+          cat > /tmp/test.mjs <<'JS'
+          import puppeteer from 'puppeteer-core';
+          const browser=await puppeteer.launch({headless:true,executablePath:'/usr/bin/google-chrome',args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader']});
+          const page=await browser.newPage();
+          await page.setViewport({width:844,height:390,deviceScaleFactor:1});
+          const errors=[]; page.on('pageerror',e=>errors.push(String(e))); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
+          await page.goto('http://127.0.0.1:8080/arena-zero-3d.html',{waitUntil:'networkidle2',timeout:60000});
+          await new Promise(r=>setTimeout(r,2500));
+          await page.screenshot({path:'arena-zero-menu.png'});
+          const asset=await page.evaluate(()=>({kenney:!!window.KENNEY_SOLDIER, canvases:document.querySelectorAll('canvas').length, play:!!document.querySelector('#play')}));
+          await page.click('#play');
+          await new Promise(r=>setTimeout(r,1800));
+          await page.screenshot({path:'arena-zero-match.png'});
+          const state=await page.evaluate(()=>({hud:getComputedStyle(document.querySelector('#hud')).display, menu:getComputedStyle(document.querySelector('#menu')).display, canvases:document.querySelectorAll('canvas').length}));
+          console.log('ASSET',JSON.stringify(asset)); console.log('STATE',JSON.stringify(state)); console.log('ERRORS',JSON.stringify(errors));
+          if(errors.length) process.exitCode=2;
+          if(state.hud==='none'||state.menu!=='none') process.exitCode=3;
+          await browser.close();
+          JS
+          node /tmp/test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arena-zero-3d-screenshots
+          path: |
+            arena-zero-menu.png
+            arena-zero-match.png
