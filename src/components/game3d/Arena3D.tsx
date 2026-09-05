@@ -131,7 +131,7 @@ export function Arena3D({ game, input, paused }: Props) {
     camTarget.current.set(hx + Math.cos(h.aim) * la, 0, hz + Math.sin(h.aim) * la);
     const shake = g.shake * 0.012;
     camera.position.lerp(
-      new THREE.Vector3(camTarget.current.x, 15.5, camTarget.current.z + 11.5),
+      new THREE.Vector3(camTarget.current.x, 12.6, camTarget.current.z + 13.4),
       1 - Math.exp(-6 * dt),
     );
     camera.position.x += (Math.random() - 0.5) * shake;
