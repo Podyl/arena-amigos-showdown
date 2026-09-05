@@ -1,0 +1,42 @@
+name: Test Nova Clash
+on:
+  push:
+    branches: [arena-zero]
+    paths:
+      - 'nova-clash.html'
+      - '.github/workflows/test-nova-clash.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - run: npm install playwright@1.55.0
+      - name: Run Nova Clash in Chromium
+        run: |
+          python3 -m http.server 4173 >/tmp/nova-http.log 2>&1 &
+          cat > test.mjs <<'JS'
+          import { chromium } from 'playwright'; import fs from 'fs';
+          const ep=['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser'].find(fs.existsSync);
+          if(!ep) throw new Error('No Chromium');
+          const browser=await chromium.launch({headless:true,executablePath:ep,args:['--no-sandbox','--use-angle=swiftshader','--enable-webgl','--ignore-gpu-blocklist']});
+          const page=await browser.newPage({viewport:{width:844,height:390},isMobile:true,hasTouch:true});
+          const errors=[]; page.on('pageerror',e=>errors.push('PAGE '+e.message)); page.on('console',m=>{if(m.type()==='error')errors.push('CONSOLE '+m.text())});
+          await page.goto('http://127.0.0.1:4173/nova-clash.html',{waitUntil:'networkidle'}); await page.waitForTimeout(2500); await page.screenshot({path:'nova-menu.png'});
+          await page.click('#play'); await page.waitForTimeout(1800); const l=await page.locator('#moveJoy').boundingBox(); if(!l) throw new Error('move joystick missing');
+          await page.mouse.move(l.x+l.width/2,l.y+l.height/2); await page.mouse.down(); await page.mouse.move(l.x+l.width*.82,l.y+l.height*.5,{steps:5}); await page.waitForTimeout(500); await page.mouse.up();
+          const r=await page.locator('#aimJoy').boundingBox(); if(!r) throw new Error('aim joystick missing'); await page.mouse.move(r.x+r.width/2,r.y+r.height/2); await page.mouse.down(); await page.mouse.move(r.x+r.width*.5,r.y+r.height*.15,{steps:5}); await page.waitForTimeout(500); await page.mouse.up();
+          await page.screenshot({path:'nova-match.png'}); const hud=await page.locator('#hud').isVisible(); const menu=await page.locator('#menu').isVisible(); console.log('HUD='+hud,'MENU='+menu,'ERRORS='+errors.length); for(const e of errors)console.log(e); if(!hud||menu||errors.length)process.exitCode=1; await browser.close();
+          JS
+          node test.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nova-clash-screenshots
+          path: |
+            nova-menu.png
+            nova-match.png
