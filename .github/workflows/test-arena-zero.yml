@@ -30,7 +30,7 @@ jobs:
           const page=await browser.newPage({viewport:{width:844,height:390},isMobile:true,hasTouch:true});
           const errors=[];
           page.on('pageerror',e=>errors.push('PAGEERROR: '+e.message));
-          page.on('console',m=>{if(m.type()==='error') errors.push('CONSOLE: '+m.text())});
+          page.on('response',r=>{if(r.status()>=400&&!r.url().endsWith('/favicon.ico'))errors.push('HTTP '+r.status()+': '+r.url())});
           await page.goto('http://127.0.0.1:4173/arena-zero-3d.html',{waitUntil:'networkidle'});
           await page.waitForTimeout(2200);
           await page.screenshot({path:'menu3d.png'});
