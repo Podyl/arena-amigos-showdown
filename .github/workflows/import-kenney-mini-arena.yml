@@ -1,0 +1,39 @@
+name: Import Kenney Mini Arena
+on:
+  workflow_dispatch:
+  push:
+    branches: [arena-zero]
+    paths:
+      - '.github/workflows/import-kenney-mini-arena.yml'
+permissions:
+  contents: write
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download and unpack CC0 Mini Arena
+        run: |
+          set -euo pipefail
+          curl -L 'https://kenney.nl/media/pages/assets/mini-arena/88f977a0cb-1709220730/kenney_mini-arena.zip' -o /tmp/mini-arena.zip
+          rm -rf /tmp/mini-arena
+          mkdir -p /tmp/mini-arena
+          unzip -q /tmp/mini-arena.zip -d /tmp/mini-arena
+          echo '--- FILES ---'
+          find /tmp/mini-arena -maxdepth 3 -type f | sed 's#^/tmp/mini-arena/##' | sort | head -200
+          mkdir -p public/kenney-mini-arena
+          find /tmp/mini-arena -type f \( -iname '*.glb' -o -iname '*.gltf' -o -iname '*.bin' -o -iname '*.png' -o -iname '*.jpg' -o -iname '*.txt' -o -iname '*.md' \) -print0 | while IFS= read -r -d '' f; do
+            rel="${f#/tmp/mini-arena/}"
+            mkdir -p "public/kenney-mini-arena/$(dirname "$rel")"
+            cp "$f" "public/kenney-mini-arena/$rel"
+          done
+      - name: Commit imported assets
+        run: |
+          git config user.name 'Arena Amigos Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add public/kenney-mini-arena
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'Import CC0 Kenney Mini Arena assets'
+          git push origin arena-zero
